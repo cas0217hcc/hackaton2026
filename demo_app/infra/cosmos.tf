@@ -55,6 +55,15 @@ resource "azurerm_cosmosdb_sql_role_assignment" "api_reader" {
   scope               = azurerm_cosmosdb_account.cosmos.id
 }
 
+# Whoever runs Terraform: browse/edit data in the portal's Data Explorer (key auth is disabled).
+resource "azurerm_cosmosdb_sql_role_assignment" "deployer_contributor" {
+  resource_group_name = local.rg_name
+  account_name        = azurerm_cosmosdb_account.cosmos.name
+  role_definition_id  = "${azurerm_cosmosdb_account.cosmos.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id        = data.azurerm_client_config.current.object_id
+  scope               = azurerm_cosmosdb_account.cosmos.id
+}
+
 resource "azurerm_cosmosdb_sql_role_assignment" "worker_contributor" {
   resource_group_name = local.rg_name
   account_name        = azurerm_cosmosdb_account.cosmos.name

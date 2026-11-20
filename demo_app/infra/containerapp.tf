@@ -40,6 +40,7 @@ resource "azurerm_container_app" "api" {
   resource_group_name          = local.rg_name
   container_app_environment_id = azurerm_container_app_environment.env.id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption" # environment uses workload profiles (VNet)
   tags                         = merge(local.tags, { component = "api" })
 
   identity {

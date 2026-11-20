@@ -7,6 +7,22 @@ resource "azurerm_service_plan" "func" {
   tags                = merge(local.tags, { component = "worker" })
 }
 
+# Workaround (azurerm 4.81): the flex resource always writes an AzureWebJobsStorage connection
+# string with an EMPTY account key. The Functions host prefers it over the managed-identity
+# settings (AzureWebJobsStorage__accountName/__credential/__clientId), fails with 403 against
+# its storage and never starts its triggers. Remove it after every create/update of the app.
+resource "terraform_data" "worker_remove_webjobs_connection_string" {
+  triggers_replace = [
+    azurerm_function_app_flex_consumption.worker.id,
+    sha256(jsonencode(azurerm_function_app_flex_consumption.worker.app_settings)),
+    sha256(jsonencode(azurerm_function_app_flex_consumption.worker.always_ready)),
+  ]
+
+  provisioner "local-exec" {
+    command = "az functionapp config appsettings delete --subscription ${var.subscription_id} -g ${local.rg_name} -n ${azurerm_function_app_flex_consumption.worker.name} --setting-names AzureWebJobsStorage -o none"
+  }
+}
+
 resource "azurerm_function_app_flex_consumption" "worker" {
   name                = "func-${local.name}-worker"
   location            = local.location
@@ -27,6 +43,13 @@ resource "azurerm_function_app_flex_consumption" "worker" {
   maximum_instance_count = 40
   instance_memory_in_mb  = 2048
 
+  # Keep one instance warm: it polls the private queue itself (no cold start, no reliance on
+  # the platform scale controller seeing the network-restricted queue). Small fixed cost.
+  always_ready {
+    name           = "function:apply_command"
+    instance_count = 1
+  }
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.worker.id]
@@ -34,6 +57,9 @@ resource "azurerm_function_app_flex_consumption" "worker" {
 
   site_config {
     application_insights_connection_string = azurerm_application_insights.ai.connection_string
+    # Route ALL outbound traffic (incl. DNS) through the VNet, so *.core.windows.net resolves
+    # via the private DNS zones to the storage private endpoints.
+    vnet_route_all_enabled = true
   }
 
   app_settings = {
