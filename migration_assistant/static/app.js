@@ -71,6 +71,30 @@ function table(headers, rows) {
   return el("div", { class: "scroll" }, t);
 }
 
+const TYPE_NAMES = {
+  "microsoft.network/virtualnetworks": "Virtual network",
+  "microsoft.network/networksecuritygroups": "Network security group (firewall)",
+  "microsoft.network/publicipaddresses": "Public IP address",
+  "microsoft.network/networkinterfaces": "Network interface (NIC)",
+  "microsoft.compute/virtualmachines": "Virtual machine",
+  "microsoft.compute/disks": "Managed disk",
+  "microsoft.storage/storageaccounts": "Storage account (blobs, files)",
+  "microsoft.keyvault/vaults": "Key Vault (secrets and keys)",
+  "microsoft.eventgrid/systemtopics": "Event Grid system topic (event routing)",
+  "microsoft.web/sites": "App Service / Function App",
+  "microsoft.documentdb/databaseaccounts": "Cosmos DB account",
+  "microsoft.servicebus/namespaces": "Service Bus namespace (messaging)",
+  "microsoft.sql/servers": "Azure SQL server",
+};
+
+// Unknown types fall back to the readable last segment, e.g. "fooBars" -> "Foo bars".
+function typeName(type) {
+  const known = TYPE_NAMES[type.toLowerCase()];
+  if (known) return known;
+  const last = type.split("/").pop().replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
 const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
 const pill = (route) => el("span", { class: "pill " + route }, LABELS[route] || route);
 
@@ -85,7 +109,7 @@ function diffBlock(text) {
 
 function renderDiscover(resources) {
   $("discover-out").replaceChildren(table(["Resource", "Type", "Location"], resources.map((r) =>
-    el("tr", {}, el("td", { class: "id" }, r.name), el("td", {}, r.type), el("td", {}, r.location)))));
+    el("tr", {}, el("td", { class: "id" }, r.name), el("td", { title: r.type }, typeName(r.type)), el("td", {}, r.location)))));
   done.discover = true;
   setLocked("assess", false);
 }
