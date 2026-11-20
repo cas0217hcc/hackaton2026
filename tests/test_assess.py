@@ -1,0 +1,111 @@
+from migration_assistant.assess import RULES, assess
+from migration_assistant.leaseweb_ops import load_operations
+from migration_assistant.models import Resource
+
+
+def res(name, type_):
+    return Resource(f"/x/{name}", name, type_, "westeurope")
+
+
+def no_claude(prompt):
+    raise AssertionError("claude should not be called for known types")
+
+
+def by_name(assessments):
+    return {a.resource_name: a for a in assessments}
+
+
+def test_vm_is_direct():
+    a = by_name(assess([res("vm1", "Microsoft.Compute/virtualMachines")], ask=no_claude))["vm1"]
+    assert a.route == "direct" and "launchInstance" in a.lw_operations
+
+
+def test_keyvault_is_rebuild():
+    a = by_name(assess([res("kv", "Microsoft.KeyVault/vaults")], ask=no_claude))["kv"]
+    assert a.route == "rebuild" and "Vault" in a.target
+
+
+def test_every_rule_operation_exists_in_specs():
+    ops = load_operations()
+    for rule in RULES.values():
+        for op in rule.lw_operations:
+            assert op in ops, op
+
+
+def test_nic_disk_and_public_ip_listed_as_included():
+    rs = [
+        res("vm1", "Microsoft.Compute/virtualMachines"),
+        res("nic", "Microsoft.Network/networkInterfaces"),
+        res("disk", "Microsoft.Compute/disks"),
+        res("pip", "Microsoft.Network/publicIPAddresses"),
+    ]
+    got = {a.resource_name: a for a in assess(rs, ask=no_claude)}
+    assert set(got) == {"vm1", "nic", "disk", "pip"}
+    assert all(got[n].route == "included" and got[n].lw_operations == [] for n in ("nic", "disk", "pip"))
+
+
+def test_unknown_type_uses_claude():
+    def ask(prompt):
+        return {"route": "rebuild", "target": "Self-hosted bar", "rationale": "no equivalent", "lw_operations": []}
+    a = assess([res("b", "Microsoft.Foo/bars")], ask=ask)[0]
+    assert a.route == "rebuild" and a.target == "Self-hosted bar"
+
+
+import pytest
+
+from migration_assistant.claude_cli import ClaudeError
+
+
+def test_unknown_claude_operation_dropped():
+    def ask(prompt):
+        return {"route": "direct", "target": "T", "rationale": "r", "lw_operations": ["launchInstance", "madeUpOp"]}
+    a = assess([res("b", "Microsoft.Foo/bars")], ask=ask)[0]
+    assert a.lw_operations == ["launchInstance"]
+    assert "madeUpOp" in a.rationale
+
+
+def test_malformed_claude_answer_raises_claude_error():
+    with pytest.raises(ClaudeError):
+        assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: {"route": "direct"})
+
+
+def test_invalid_route_raises_claude_error():
+    bad = {"route": "maybe", "target": "T", "rationale": "r"}
+    with pytest.raises(ClaudeError):
+        assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: bad)
+
+
+def test_route_is_normalised():
+    ok = {"route": "Direct", "target": "T", "rationale": "r"}
+    assert assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: ok)[0].route == "direct"
+
+
+def owned(name, type_, props):
+    return Resource(f"/x/{name}", name, type_, "westeurope", props)
+
+
+def one(r):
+    return assess([r], ask=no_claude)[0]
+
+
+def test_included_nic_says_which_vm_owns_it():
+    a = one(owned("nic1", "Microsoft.Network/networkInterfaces", {"properties": {"virtualMachine": {"id": "/s/rg/providers/Microsoft.Compute/virtualMachines/vm-web-01"}}}))
+    assert a.route == "included" and a.target == "Part of virtual machine vm-web-01"
+
+
+def test_included_nic_of_a_private_endpoint_names_the_endpoint_not_a_vm():
+    a = one(owned("pe.nic.1", "Microsoft.Network/networkInterfaces", {"properties": {"privateEndpoint": {"id": "/s/rg/providers/Microsoft.Network/privateEndpoints/pe-func-blob"}}}))
+    assert a.route == "included" and a.target == "Part of private endpoint pe-func-blob"
+    assert "Public Cloud instance" not in a.target + a.rationale
+
+
+def test_included_disk_and_public_ip_name_their_owner():
+    d = one(owned("disk1", "Microsoft.Compute/disks", {"managedBy": "/s/rg/providers/Microsoft.Compute/virtualMachines/vm-web-01"}))
+    assert d.target == "Part of virtual machine vm-web-01"
+    ip = one(owned("pip1", "Microsoft.Network/publicIPAddresses", {"properties": {"ipConfiguration": {"id": "/s/rg/providers/Microsoft.Network/networkInterfaces/nic-web-01/ipConfigurations/ipconfig1"}}}))
+    assert ip.target == "Part of network interface nic-web-01"
+
+
+def test_included_resource_with_unknown_owner_keeps_the_generic_wording():
+    a = one(owned("nic2", "Microsoft.Network/networkInterfaces", {}))
+    assert a.route == "included" and a.target == "Part of the resource it is attached to"

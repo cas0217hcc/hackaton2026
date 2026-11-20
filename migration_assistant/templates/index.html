@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azure to Leaseweb Migration Assistant</title>
+<link rel="stylesheet" href="/static/style.css?v={{ v }}">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="brand-tab">
+      <img class="lsw-logo" id="lsw-logo" alt="Leaseweb" hidden>
+      <svg class="logo" id="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="7" fill="#04052f"/>
+        <path d="M7 21 L12 11 L17 21 Z" fill="none" stroke="#e86826" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M17 16 H26 M22.5 12.5 L26 16 L22.5 19.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <h1>Azure migration assistant</h1>
+  </div>
+  <div class="top-actions">
+    <span class="mode" id="mode" role="status"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
+    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI)</button>
+    <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">Leaseweb key</button>
+    <button class="btn ghost" id="reset-btn" type="button">Start over</button>
+  </div>
+</header>
+
+<div class="keybar" id="keybar" hidden>
+  <form id="key-form" autocomplete="off">
+    <label for="api-key">Leaseweb API key</label>
+    <input id="api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key. It is never shown again.">
+    <button class="btn" type="submit">Save key</button>
+    <button class="btn secondary" type="button" id="key-remove" hidden>Remove key</button>
+  </form>
+  <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Migrate sends real calls to Leaseweb instead of a dry run.</p>
+</div>
+
+<div class="keybar" id="aibar" hidden>
+  <form id="ai-form" autocomplete="off">
+    <div class="ai-row">
+      <label for="ai-provider">AI used for assessments and plans</label>
+      <select id="ai-provider"></select>
+    </div>
+    <div class="ai-row" id="ai-model-row" hidden>
+      <label for="ai-model">Model</label>
+      <select id="ai-model"></select>
+      <span class="ai-note" id="ai-model-note"></span>
+    </div>
+    <div class="ai-row" id="ai-key-row" hidden>
+      <label for="ai-key">Anthropic API key</label>
+      <input id="ai-key" type="password" autocomplete="new-password" spellcheck="false">
+      <button class="btn secondary" type="button" id="ai-key-remove" hidden>Remove key</button>
+    </div>
+    <p class="ai-help" id="ai-help"></p>
+    <div class="ai-row">
+      <button class="btn" type="submit">Save</button>
+      <button class="btn secondary" type="button" id="ai-test">Test connection</button>
+      <span id="ai-result" role="status" aria-live="polite"></span>
+    </div>
+  </form>
+</div>
+<div class="liveband" id="liveband" role="status" hidden>
+  <span><b>LIVE mode.</b> Calls you run on the Migrate screen are sent to Leaseweb and can create billable resources.</span>
+  <button class="btn ghost" id="live-off" type="button">Remove key and return to dry run</button>
+</div>
+<div id="top-confirm"></div>
+
+<div class="restored" id="restored" hidden>
+  <span>Showing saved results from your last session. Re-run any stage to refresh them.</span>
+  <button class="link" id="restored-dismiss" type="button">Dismiss</button>
+</div>
+
+<nav class="steps" aria-label="Stages">
+  <button class="step on" data-stage="discover"><span class="num">1</span>Discover</button>
+  <button class="step" data-stage="assess" disabled><span class="num">2</span>Assess</button>
+  <button class="step" data-stage="plan" disabled><span class="num">3</span>Plan</button>
+  <button class="step" data-stage="migrate" disabled><span class="num">4</span>Migrate</button>
+</nav>
+
+<main>
+  <div id="error" class="error" role="alert" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>
+    <span id="error-text"></span>
+    <button class="btn secondary" id="retry">Retry</button>
+  </div>
+
+  <div class="card">
+    <section id="stage-discover" class="stage">
+      <div class="stage-head">
+        <h2>Discover resources</h2>
+        <p>Read the resources of an Azure resource group. Azure is only read, never changed.</p>
+      </div>
+      <form id="discover-form" class="row">
+        <label for="rg">Resource group</label>
+        <input id="rg" name="resource_group" value="{{ default_rg }}" autocomplete="off">
+        <button class="btn" type="submit">Discover resources</button>
+      </form>
+      <div id="discover-out"><p class="empty">No resources loaded yet. Enter a resource group and discover it.</p></div>
+    </section>
+
+    <section id="stage-assess" class="stage" hidden>
+      <div class="stage-head">
+        <h2>Assess Leaseweb fit</h2>
+        <p>How each Azure resource maps to Leaseweb.</p>
+      </div>
+      <div class="row"><button class="btn secondary" id="assess-btn">Re-run assessment</button></div>
+      <div id="assess-out"></div>
+    </section>
+
+    <section id="stage-plan" class="stage" hidden>
+      <div class="stage-head">
+        <h2>Plan the rebuilds</h2>
+        <p>Proposed Leaseweb infrastructure for resources with no direct equivalent, plus the code changes they need.</p>
+      </div>
+      <form id="plan-form" class="sources">
+        <div class="sources-head">
+          <label for="src-0">Application source folders <span class="opt">(optional, up to 5)</span></label>
+          <span class="opt" id="folder-count"></span>
+        </div>
+        <div id="folder-list"></div>
+        <div class="sources-actions">
+          <button type="button" class="btn secondary" id="add-folder">Add folder</button>
+          <button class="btn" type="submit">Generate plan</button>
+        </div>
+      </form>
+      <div id="plan-out"></div>
+    </section>
+
+    <section id="stage-migrate" class="stage" hidden>
+      <div class="stage-head">
+        <h2 id="migrate-title">Dry-run migration</h2>
+        <p id="migrate-desc">The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.</p>
+      </div>
+      <div class="row"><button class="btn" id="migrate-btn">Run dry-run migration</button></div>
+      <div id="migrate-note" aria-live="polite"></div>
+      <div id="migrate-out"></div>
+    </section>
+
+    <footer class="actions">
+      <a class="btn secondary" id="export" href="/export" download="migration-plan.md" hidden>Export plan</a>
+      <button class="btn" id="next" hidden>Continue</button>
+    </footer>
+  </div>
+</main>
+<script src="/static/app.js?v={{ v }}"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+anthropic
+fastapi
+httpx
+jinja2
+pytest
+python-multipart
+pyyaml
+uvicorn
