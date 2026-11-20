@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from .assess import assess
+from .dependencies import add_dependencies
 from .azure_discovery import DiscoveryError, list_resource_groups, list_resources
 from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
@@ -152,12 +153,13 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if not state["resources"]:
             return error("Run Discover first.", 409)
         try:
-            state["assessments"] = assess(state["resources"], ask=ask_ai, ops=ops)
+            assessments = assess(state["resources"], ask=ask_ai, ops=ops)
         except ClaudeError as e:
             return error(str(e))
-        state.update(plans=[], calls=[])
+        note = add_dependencies(state["resources"], assessments, ask=ask_ai)
+        state.update(assessments=assessments, plans=[], calls=[])
         save()
-        return {"assessments": [asdict(a) for a in state["assessments"]]}
+        return {"assessments": [asdict(a) for a in assessments], "message": note}
 
     @app.post("/api/plan")
     def api_plan(source_dirs: list[str] = Form(default=[])):
@@ -354,7 +356,8 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def export():
         lines = ["# Azure to Leaseweb migration plan", "", "## Assessment", ""]
         for a in state["assessments"]:
-            lines.append(f"- **{a.resource_name}**: {a.route} -> {a.target}. {a.rationale}")
+            needs = f" Needs first: {', '.join(d['name'] for d in a.dependencies)}." if a.dependencies else ""
+            lines.append(f"- **{a.resource_name}**: {a.route} -> {a.target}. {a.rationale}{needs}")
         for p in state["plans"]:
             lines += ["", f"## Plan: {p.resource_name}", "", p.proposal, ""]
             lines += [f"{i}. {st}" for i, st in enumerate(p.steps, 1)] + [""] if p.steps else []

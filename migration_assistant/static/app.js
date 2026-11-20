@@ -350,12 +350,21 @@ function renderDiscover(resources) {
 }
 
 // Route filter on the Assess table: the chips toggle routes; nothing selected shows everything.
-function renderAssess(assessments) {
+function needsCell(a) {
+  if (a.route === "included") return el("td", { class: "sub" }, "With its owner");
+  const deps = a.dependencies || [];
+  const step = el("div", { class: "step-no" }, `Step ${(a.wave ?? 0) + 1}`);
+  if (!deps.length) return el("td", {}, step, el("div", { class: "sub" }, "Nothing"));
+  return el("td", {}, step, el("ul", { class: "deps" }, ...deps.map((d) =>
+    el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
+}
+
+function renderAssess(assessments, message = "") {
   const picked = new Set();
   let query = "";
   const rows = assessments.map((a) => {
-    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale));
-    tr.dataset.text = [a.resource_name, a.target, a.rationale, LABELS[a.route]].join(" ").toLowerCase();
+    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), el("td", { class: "sub" }, a.rationale));
+    tr.dataset.text = [a.resource_name, a.target, a.rationale, LABELS[a.route], ...(a.dependencies || []).map((d) => d.name)].join(" ").toLowerCase();
     return tr;
   });
   const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
@@ -387,8 +396,10 @@ function renderAssess(assessments) {
   $("assess-out").replaceChildren(
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
-      el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately."),
-    table(["Resource", "Leaseweb target", "Route", "Why"], rows));
+      el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately. ",
+      el("b", {}, "Needs first"), " lists the resources that must exist on Leaseweb before this one is created. Manual and Automatic migration follow this order."),
+    ...(message ? [el("p", { class: "note", role: "status" }, message)] : []),
+    table(["Resource", "Leaseweb target", "Route", "Needs first", "Why"], rows));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -973,7 +984,7 @@ async function assess() {
   const data = await call("/api/assess", null, $("assess-out"), assess);
   if (!data) return;
   invalidateAfter("assess");
-  renderAssess(data.assessments);
+  renderAssess(data.assessments, data.message);
   show("assess");
 }
 

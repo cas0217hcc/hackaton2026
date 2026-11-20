@@ -77,9 +77,32 @@ def build_calls(assessments: list[Assessment], ops: dict | None = None,
             body = dict(PLACEHOLDER_BODIES.get(op, {}))
             _prefill(op, body, a.resource_name, by_name.get(a.resource_name))
             calls.append(DryRunCall(method, path, op, body, source=a.resource_name))
-    order = list(PRODUCES)
-    calls.sort(key=lambda c: order.index(c.operation_id) if c.operation_id in order else len(order))
-    return annotate_chain(calls)
+    return annotate_chain(order_calls(calls, assessments))
+
+
+def order_calls(calls: list[DryRunCall], assessments: list[Assessment]) -> list[DryRunCall]:
+    """Topological order: a call runs after the calls producing its {path params} and after the
+    creating calls of every resource its source depends on (found at Assess). Ties: earlier wave,
+    then producers in PRODUCES order, then input order. A cycle falls back to the PRODUCES order."""
+    kinds = list(PRODUCES)
+    wave = {a.resource_name: a.wave or 0 for a in assessments}
+    needs = {a.resource_name: {d["name"] for d in a.dependencies} for a in assessments}
+    before: list[set[int]] = [set() for _ in calls]
+    for i, c in enumerate(calls):
+        params = set(re.findall(r"\{([^}/]+)\}", c.path))
+        for j, d in enumerate(calls):
+            if j != i and d.operation_id in PRODUCES and (
+                    PRODUCES[d.operation_id] in params or d.source in needs.get(c.source, ())):
+                before[i].add(j)
+    key = lambda i: (wave.get(calls[i].source, 0),
+                     kinds.index(calls[i].operation_id) if calls[i].operation_id in kinds else len(kinds), i)
+    out: list[int] = []
+    while len(out) < len(calls):
+        ready = [i for i in range(len(calls)) if i not in out and before[i] <= set(out)]
+        if not ready:
+            return sorted(calls, key=lambda c: kinds.index(c.operation_id) if c.operation_id in kinds else len(kinds))
+        out.append(min(ready, key=key))
+    return [calls[i] for i in out]
 
 
 class Executor(Protocol):
