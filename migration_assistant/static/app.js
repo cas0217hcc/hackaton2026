@@ -383,7 +383,7 @@ function renderDiscover(resources) {
 function needsCell(a) {
   if (a.route === "included") return el("td", { class: "sub" }, "With its owner");
   const deps = a.dependencies || [];
-  const step = el("div", { class: "step-no" }, `Step ${(a.wave ?? 0) + 1}`);
+  const step = el("div", { class: "needs-step" }, `Step ${(a.wave ?? 0) + 1}`);
   if (!deps.length) return el("td", {}, step, el("div", { class: "sub" }, "Nothing"));
   return el("td", {}, step, el("ul", { class: "deps" }, ...deps.map((d) =>
     el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
@@ -838,6 +838,10 @@ const AI_HELP = {
   "anthropic-api": "Calls the Anthropic API directly. The key is kept in server memory only, never saved or shown again. Leave the model empty for the default (claude-opus-5-5).",
   "opencode": "Runs `opencode run` in an empty scratch folder, so it cannot touch your project. Model format: provider/model, for example anthropic/claude-sonnet-5-5. Leave it empty for opencode's own default.",
 };
+// Help text marks commands with backticks; show them as code instead of literal backticks.
+function withCode(text) {
+  return text.split("`").map((part, i) => (i % 2 ? el("code", {}, part) : part));
+}
 let aiState = null;
 const modelLists = {};  // provider -> {models, source, error}, filled on first use
 
@@ -854,7 +858,7 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-btn").textContent = `AI: ${aiLabel(s)} · ${aiModelText(s)}`;
+  $("ai-btn").replaceChildren("AI: " + aiLabel(s), el("span", { class: "ai-model" }, aiModelText(s)));
   $("ai-btn").title = "Change the AI provider and model";
   syncAiForm(s.provider);
   $("ai-key-remove").hidden = !s.api_key_set;
@@ -866,7 +870,7 @@ function syncAiForm(provider) {
   $("ai-provider").value = provider;
   $("ai-key-row").hidden = provider !== "anthropic-api";
   loadModels(provider);
-  $("ai-help").textContent = AI_HELP[provider] || "";
+  $("ai-help").replaceChildren(...withCode(AI_HELP[provider] || ""));
   $("ai-result").textContent = "";
   $("ai-result").className = "";
 }

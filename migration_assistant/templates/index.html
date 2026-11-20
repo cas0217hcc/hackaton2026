@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Azure to Leaseweb Migration Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css?v={{ v }}">
 </head>
 <body>
@@ -21,11 +24,12 @@
   </div>
   <div class="top-actions">
     <span class="mode" id="mode" role="status"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
-    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI) · default model</button>
+    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI)<span class="ai-model">default model</span></button>
     <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">Leaseweb key</button>
     <button class="btn ghost" id="reset-btn" type="button">Start over</button>
   </div>
 </header>
+
 
 <div class="keybar" id="keybar" hidden>
   <form id="key-form" autocomplete="off">
@@ -67,26 +71,28 @@
 </div>
 <div id="top-confirm"></div>
 
-<div class="restored" id="restored" hidden>
-  <span>Showing saved results from your last session. Re-run any stage to refresh them.</span>
-  <button class="link" id="restored-dismiss" type="button">Dismiss</button>
-</div>
-
 <nav class="steps" aria-label="Stages">
-  <button class="step on" data-stage="discover"><span class="num">1</span>Discover</button>
-  <button class="step" data-stage="assess" disabled><span class="num">2</span>Assess</button>
-  <button class="step" data-stage="plan" disabled><span class="num">3</span>Manual migration</button>
-  <button class="step" data-stage="migrate" disabled><span class="num">4</span>Automatic migration</button>
+  <div class="route">
+    <span class="terminus from" aria-hidden="true"><span class="node"></span><span class="lbl">Azure</span></span>
+    <button class="step on" data-stage="discover"><span class="num">1</span><span class="lbl">Discover</span></button>
+    <button class="step" data-stage="assess" disabled><span class="num">2</span><span class="lbl">Assess</span></button>
+    <button class="step" data-stage="plan" disabled><span class="num">3</span><span class="lbl">Manual migration</span></button>
+    <button class="step" data-stage="migrate" disabled><span class="num">4</span><span class="lbl">Automatic migration</span></button>
+    <span class="terminus to" aria-hidden="true"><span class="node"></span><span class="lbl">Leaseweb</span></span>
+  </div>
 </nav>
 
 <main>
-  <div id="error" class="error" role="alert" hidden>
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>
-    <span id="error-text"></span>
-    <button class="btn secondary" id="retry">Retry</button>
-  </div>
-
   <div class="card">
+    <div class="restored" id="restored" hidden>
+      <span>Showing saved results from your last session. Re-run any stage to refresh them.</span>
+      <button class="link" id="restored-dismiss" type="button">Dismiss</button>
+    </div>
+    <div id="error" class="error" role="alert" hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>
+      <span id="error-text"></span>
+      <button class="btn secondary" id="retry">Retry</button>
+    </div>
     <section id="stage-discover" class="stage">
       <div class="stage-head">
         <h2>Discover resources</h2>

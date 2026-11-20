@@ -111,11 +111,11 @@ def available_providers(settings: AiSettings, which: Callable = shutil.which) ->
     env_key = any(os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"))
     return [
         {"id": "claude-cli", "label": "Claude Code (CLI)", "available": bool(which("claude")),
-         "detail": "uses your Claude Code login" if which("claude") else "`claude` not found on PATH"},
+         "detail": "uses your Claude Code login" if which("claude") else "claude command not found on PATH"},
         {"id": "anthropic-api", "label": "Anthropic API", "available": True,
          "detail": "key set" if settings.api_key else "key from ANTHROPIC_API_KEY" if env_key else "no key yet: paste one below"},
         {"id": "opencode", "label": "opencode", "available": bool(which("opencode")),
-         "detail": "uses your opencode setup" if which("opencode") else "`opencode` not found on PATH"},
+         "detail": "uses your opencode setup" if which("opencode") else "opencode command not found on PATH"},
     ]
 
 
