@@ -1,0 +1,40 @@
+description: Available resources
+properties:
+  cpu:
+    required:
+      - value
+      - unit
+    type: object
+    title: cpu
+    properties:
+      value:
+        type: integer
+        example: '2'
+      unit:
+        type: string
+        example: vCPU
+    description: Number of cores
+  memory:
+    required:
+      - value
+      - unit
+    title: memory
+    type: object
+    properties:
+      value:
+        type: number
+        example: '3.75'
+      unit:
+        type: string
+        example: GiB
+    description: Total memory in GiB
+  publicNetworkSpeed:
+    $ref: ./networkSpeed.yaml
+  privateNetworkSpeed:
+    $ref: ./networkSpeed.yaml
+required:
+  - privateNetworkSpeed
+  - cpu
+  - memory
+  - publicNetworkSpeed
+type: object

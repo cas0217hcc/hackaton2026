@@ -1,0 +1,16 @@
+type: object
+title: metricsMetadataProperties
+properties:
+  from:
+    type: string
+    format: date-time
+  to:
+    type: string
+    format: date-time
+  granularity:
+    $ref: ./metricGranularity.yaml
+  aggregation:
+    type: string
+    enum:
+      - SUM
+    description: Defined by the query

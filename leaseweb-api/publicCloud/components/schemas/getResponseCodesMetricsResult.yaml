@@ -1,0 +1,16 @@
+properties:
+  metrics:
+    title: responseCodesMetrics
+    type: object
+    properties:
+      2xx:
+        $ref: ./metricsPropertiesResponses.yaml
+      3xx:
+        $ref: ./metricsPropertiesResponses.yaml
+      4xx:
+        $ref: ./metricsPropertiesResponses.yaml
+      5xx:
+        $ref: ./metricsPropertiesResponses.yaml
+  _metadata:
+    $ref: ./metricsMetadataProperties.yaml
+type: object

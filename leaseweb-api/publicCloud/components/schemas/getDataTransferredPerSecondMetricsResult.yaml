@@ -1,0 +1,12 @@
+properties:
+  metrics:
+    title: dataTransferredMetricsPerSec
+    type: object
+    properties:
+      dataIn:
+        $ref: ./metricsPropertiesRequests.yaml
+      dataOut:
+        $ref: ./metricsPropertiesRequests.yaml
+  _metadata:
+    $ref: ./metricsMetadataProperties.yaml
+type: object

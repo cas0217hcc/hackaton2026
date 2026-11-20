@@ -1,0 +1,12 @@
+type: object
+required:
+  - type
+  - term
+  - billingFrequency
+properties:
+  billingFrequency:
+    $ref: ./billingFrequency.yaml
+  term:
+    $ref: ./contractTerm.yaml
+  type:
+    $ref: ./contractType.yaml

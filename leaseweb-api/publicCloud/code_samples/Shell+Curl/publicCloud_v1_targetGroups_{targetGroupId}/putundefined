@@ -1,0 +1,5 @@
+curl --request PUT \
+  --url https://api.leaseweb.com/publicCloud/v1/targetGroups/fb769dab-3daa-47e4-89ed-06a4b6499176 \
+  --header 'X-LSW-Auth: REPLACE_KEY_VALUE' \
+  --header 'content-type: application/json' \
+  --data '{"name":"string","port":0,"healthCheck":{"protocol":"HTTP","method":"GET","uri":"/","host":"string","port":0}}'

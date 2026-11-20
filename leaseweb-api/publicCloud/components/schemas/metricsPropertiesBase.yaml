@@ -1,0 +1,15 @@
+type: object
+title: metricsProperties
+properties:
+  values:
+    type: array
+    items:
+      title: metricsValues
+      type: object
+      properties:
+        value:
+          type: number
+          description: Metric value
+        timestamp:
+          type: string
+          format: date-time

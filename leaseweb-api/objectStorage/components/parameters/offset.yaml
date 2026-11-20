@@ -1,0 +1,7 @@
+name: offset
+description: Return results starting from the given offset.
+in: query
+schema:
+  type: integer
+  default: 0
+required: false

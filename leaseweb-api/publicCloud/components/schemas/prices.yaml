@@ -1,0 +1,11 @@
+required:
+  - hourly
+  - monthly
+type: object
+properties:
+  hourly:
+    type: string
+    example: '0.1604'
+  monthly:
+    type: string
+    example: '105.4500'

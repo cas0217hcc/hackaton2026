@@ -1,0 +1,21 @@
+title: instanceType
+required:
+  - name
+  - resources
+  - storageTypes
+  - prices
+  - minDiskSize
+properties:
+  name:
+    $ref: ./typeName.yaml
+  resources:
+    $ref: ./resources.yaml
+  storageTypes:
+    $ref: ./storageTypes.yaml
+  prices:
+    $ref: ./prices.yaml
+  minDiskSize:
+    type: integer
+    description: >-
+      The minimum disk size required to launch an instance with the instance
+      type
