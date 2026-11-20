@@ -379,6 +379,6 @@ pre .add { color: #8fe0a4; } pre .del { color: #ff9d9d; }
   .vlabel { padding-top: 6px; white-space: normal; overflow-wrap: anywhere; }
 }
 
-.step-no { font-weight: 600; font-size: 13px; }
+.wave-no { font-weight: 600; font-size: 13px; }
 ul.deps { margin: 2px 0 0; padding-left: 16px; font-size: 13px; }
 .dep-ai { margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 11px; background: var(--line-soft); color: var(--mute); }

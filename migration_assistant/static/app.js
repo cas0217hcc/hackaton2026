@@ -353,7 +353,7 @@ function renderDiscover(resources) {
 function needsCell(a) {
   if (a.route === "included") return el("td", { class: "sub" }, "With its owner");
   const deps = a.dependencies || [];
-  const step = el("div", { class: "step-no" }, `Step ${(a.wave ?? 0) + 1}`);
+  const step = el("div", { class: "wave-no" }, `Step ${(a.wave ?? 0) + 1}`);
   if (!deps.length) return el("td", {}, step, el("div", { class: "sub" }, "Nothing"));
   return el("td", {}, step, el("ul", { class: "deps" }, ...deps.map((d) =>
     el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
@@ -362,7 +362,9 @@ function needsCell(a) {
 function renderAssess(assessments, message = "") {
   const picked = new Set();
   let query = "";
-  const rows = assessments.map((a) => {
+  // Dependency order: lowest wave first, "included" rows (no step of their own) last. Array.sort is stable.
+  const ordered = [...assessments].sort((x, y) => (x.route === "included") - (y.route === "included") || (x.wave ?? 0) - (y.wave ?? 0));
+  const rows = ordered.map((a) => {
     const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), el("td", { class: "sub" }, a.rationale));
     tr.dataset.text = [a.resource_name, a.target, a.rationale, LABELS[a.route], ...(a.dependencies || []).map((d) => d.name)].join(" ").toLowerCase();
     return tr;
