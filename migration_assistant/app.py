@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import threading
 
 import httpx
@@ -14,7 +16,8 @@ from starlette.requests import Request
 
 from .assess import assess
 from .azure_discovery import DiscoveryError, list_resources
-from .claude_cli import ClaudeError, ask_json
+from .claude_cli import ClaudeError
+from .llm import AiSettings, available_providers, make_ask as default_make_ask
 from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_launch_options, load_operations
@@ -56,8 +59,8 @@ def _load(path: Path | None) -> dict:
     return state
 
 
-def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
-               state_file: Path | None = DEFAULT_STATE_FILE, http=None) -> FastAPI:
+def create_app(discover: Callable = list_resources, ask: Callable | None = None,
+               state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -65,6 +68,12 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     progress: dict = {"running": False, "items": []}  # live status of the current plan run
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
+    ai = AiSettings(provider=os.environ.get("AI_PROVIDER", "claude-cli"), model=os.environ.get("AI_MODEL", ""))  # memory only
+
+    def ask_ai(prompt: str) -> dict:
+        """Answer with whichever provider is selected right now (tests can pass a fixed `ask`)."""
+        return (ask or make_ask(ai))(prompt)
+
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     ops = load_operations()
     launch_options = load_launch_options()
@@ -125,7 +134,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         if not state["resources"]:
             return error("Run Discover first.", 409)
         try:
-            state["assessments"] = assess(state["resources"], ask=ask, ops=ops)
+            state["assessments"] = assess(state["resources"], ask=ask_ai, ops=ops)
         except ClaudeError as e:
             return error(str(e))
         state.update(plans=[], calls=[])
@@ -161,7 +170,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
             progress["running"] = True
             progress["items"] = [{"name": a.resource_name, "status": "pending"} for a in rebuild]
         try:
-            plans = build_plans([(a, by_name[a.resource_name]) for a in rebuild], source, ask=ask, ops=ops,
+            plans = build_plans([(a, by_name[a.resource_name]) for a in rebuild], source, ask=ask_ai, ops=ops,
                                 on_progress=on_progress)
         finally:
             with progress_lock:
@@ -191,6 +200,42 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
             return error("Run Assess first.", 409)
         return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops, state["resources"])],
                 "live": bool(secrets["api_key"])}
+
+    def ai_state() -> dict:
+        return {"provider": ai.provider, "model": ai.model, "api_key_set": bool(ai.api_key),
+                "providers": available_providers(ai)}
+
+    @app.get("/api/ai")
+    def api_ai():
+        return ai_state()
+
+    @app.post("/api/ai")
+    def api_ai_set(provider: str = Form(...), model: str = Form(""), api_key: str = Form("")):
+        provider, model = provider.strip(), model.strip()
+        if provider not in {p["id"] for p in available_providers(ai)}:
+            return error(f"Unknown AI provider '{provider}'.", 400)
+        if provider == "opencode" and model and not re.fullmatch(r"[A-Za-z0-9][\w.\-]*/[\w.\-:/]+", model):
+            return error("opencode model must look like provider/model, for example anthropic/claude-sonnet-5-5.", 400)
+        ai.provider, ai.model = provider, model
+        if api_key.strip():  # an empty field keeps the key that is already set
+            ai.api_key = api_key.strip()
+        return ai_state()
+
+    @app.delete("/api/ai/key")
+    def api_ai_clear_key():
+        ai.api_key = None
+        return ai_state()
+
+    @app.post("/api/ai/test")
+    def api_ai_test():
+        """Send a tiny request through the selected provider so a bad setup shows up before a long run."""
+        try:
+            answer = ask_ai('Reply with this JSON object and nothing else: {"ok": true}')
+        except ClaudeError as e:
+            return error(str(e))
+        if answer.get("ok") is not True:
+            return error("The AI answered, but not with the expected JSON.")
+        return {"ok": True}
 
     @app.get("/api/migrate/options")
     def api_migrate_options():

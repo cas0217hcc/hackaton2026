@@ -21,7 +21,8 @@
   </div>
   <div class="top-actions">
     <span class="mode" id="mode" role="status"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
-    <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">API key</button>
+    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI)</button>
+    <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">Leaseweb key</button>
     <button class="btn ghost" id="reset-btn" type="button">Start over</button>
   </div>
 </header>
@@ -36,6 +37,29 @@
   <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Migrate sends real calls to Leaseweb instead of a dry run.</p>
 </div>
 
+<div class="keybar" id="aibar" hidden>
+  <form id="ai-form" autocomplete="off">
+    <div class="ai-row">
+      <label for="ai-provider">AI used for assessments and plans</label>
+      <select id="ai-provider"></select>
+    </div>
+    <div class="ai-row" id="ai-model-row" hidden>
+      <label for="ai-model">Model</label>
+      <input id="ai-model" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="ai-row" id="ai-key-row" hidden>
+      <label for="ai-key">Anthropic API key</label>
+      <input id="ai-key" type="password" autocomplete="new-password" spellcheck="false">
+      <button class="btn secondary" type="button" id="ai-key-remove" hidden>Remove key</button>
+    </div>
+    <p class="ai-help" id="ai-help"></p>
+    <div class="ai-row">
+      <button class="btn" type="submit">Save</button>
+      <button class="btn secondary" type="button" id="ai-test">Test connection</button>
+      <span id="ai-result" role="status" aria-live="polite"></span>
+    </div>
+  </form>
+</div>
 <div class="liveband" id="liveband" role="status" hidden>
   <span><b>LIVE mode.</b> Calls you run on the Migrate screen are sent to Leaseweb and can create billable resources.</span>
   <button class="btn ghost" id="live-off" type="button">Remove key and return to dry run</button>

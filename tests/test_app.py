@@ -395,3 +395,80 @@ def test_calls_carry_their_azure_resource_through_the_api():
     assert prepared[0]["source"] == "vm-web-01"
     r = c.post("/api/migrate", data={"calls": _json.dumps([{**good_call(), "source": "sthack"}])}).json()
     assert r["calls"][0]["source"] == "sthack"
+
+
+# ---- AI provider settings
+
+SECRET = "sk-ant-secret-key-123"
+
+
+def ai_client(**kw):
+    made = []
+
+    def make_ask(settings):
+        made.append((settings.provider, settings.model, settings.api_key))
+        return lambda prompt: {"ok": True} if '"ok"' in prompt else plan_answer(prompt)
+    kw.setdefault("discover", lambda rg: [VM, KV])
+    return TestClient(create_app(state_file=None, make_ask=make_ask, **kw)), made
+
+
+def test_ai_settings_default_to_claude_code():
+    c, _ = ai_client()
+    s = c.get("/api/ai").json()
+    assert s["provider"] == "claude-cli" and s["model"] == ""
+    assert {p["id"] for p in s["providers"]} == {"claude-cli", "anthropic-api", "opencode"}
+
+
+def test_ai_provider_can_be_switched_and_the_key_is_never_returned():
+    c, _ = ai_client()
+    r = c.post("/api/ai", data={"provider": "anthropic-api", "model": "claude-sonnet-5-5", "api_key": SECRET})
+    assert r.status_code == 200 and SECRET not in r.text
+    s = c.get("/api/ai")
+    assert SECRET not in s.text
+    body = s.json()
+    assert body["provider"] == "anthropic-api" and body["model"] == "claude-sonnet-5-5" and body["api_key_set"] is True
+    assert SECRET not in c.get("/api/state").text and SECRET not in c.get("/export").text
+
+
+def test_ai_key_is_kept_when_only_the_provider_changes_and_can_be_removed():
+    c, _ = ai_client()
+    c.post("/api/ai", data={"provider": "anthropic-api", "api_key": SECRET})
+    c.post("/api/ai", data={"provider": "opencode", "model": "anthropic/claude-sonnet-5-5"})
+    assert c.get("/api/ai").json()["api_key_set"] is True
+    assert c.delete("/api/ai/key").status_code == 200
+    assert c.get("/api/ai").json()["api_key_set"] is False
+
+
+def test_unknown_provider_and_bad_opencode_model_are_rejected():
+    c, _ = ai_client()
+    assert c.post("/api/ai", data={"provider": "nope"}).status_code == 400
+    r = c.post("/api/ai", data={"provider": "opencode", "model": "--auto"})
+    assert r.status_code == 400 and "provider/model" in r.json()["error"]
+    assert c.get("/api/ai").json()["provider"] == "claude-cli"
+
+
+def test_plan_uses_the_selected_provider():
+    c, made = ai_client()
+    c.post("/api/ai", data={"provider": "opencode", "model": "anthropic/claude-sonnet-5-5"})
+    c.post("/api/discover", data={"resource_group": "rg"})
+    c.post("/api/assess")
+    assert c.post("/api/plan", data={"source_dirs": ""}).status_code == 200
+    assert ("opencode", "anthropic/claude-sonnet-5-5", None) in made
+
+
+def test_connection_test_reports_success_and_failure():
+    c, _ = ai_client()
+    assert c.post("/api/ai/test").json() == {"ok": True}
+
+    def failing(settings):
+        def ask(prompt):
+            raise ClaudeError("opencode failed: no credentials")
+        return ask
+    bad = TestClient(create_app(state_file=None, make_ask=failing))
+    r = bad.post("/api/ai/test")
+    assert r.status_code == 502 and "no credentials" in r.json()["error"]
+
+
+def test_connection_test_checks_that_the_answer_is_json_with_ok():
+    wrong = TestClient(create_app(state_file=None, make_ask=lambda s: (lambda prompt: {"hello": 1})))
+    assert wrong.post("/api/ai/test").status_code == 502

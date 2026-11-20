@@ -347,7 +347,7 @@ function refreshMode() {
   $("mode-text").textContent = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
   $("mode").classList.toggle("live", live);
   $("liveband").hidden = !live;
-  $("key-btn").textContent = live ? "API key set" : "API key";
+  $("key-btn").textContent = live ? "Leaseweb key set" : "Leaseweb key";
   $("key-remove").hidden = !live;
   $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
   $("migrate-btn").classList.toggle("danger", live);
@@ -674,6 +674,82 @@ async function migrate() {
   show("migrate");
 }
 
+// ---- AI provider: which assistant writes the assessments and plans
+const AI_HELP = {
+  "claude-cli": "Runs the `claude` command on this machine with your Claude Code login. No key needed.",
+  "anthropic-api": "Calls the Anthropic API directly. The key is kept in server memory only, never saved or shown again. Leave the model empty for the default (claude-opus-5-5).",
+  "opencode": "Runs `opencode run` in an empty scratch folder, so it cannot touch your project. Model format: provider/model, for example anthropic/claude-sonnet-5-5. Leave it empty for opencode's own default.",
+};
+const AI_MODEL_HINT = { "anthropic-api": "claude-opus-5-5", "opencode": "provider/model (optional)" };
+let aiState = null;
+
+function aiLabel(s) { return (s.providers.find((p) => p.id === s.provider) || {}).label || s.provider; }
+
+function renderAi(s) {
+  aiState = s;
+  const sel = $("ai-provider");
+  sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
+  sel.value = s.provider;
+  $("ai-model").value = s.model;
+  $("ai-btn").textContent = "AI: " + aiLabel(s);
+  syncAiForm(s.provider);
+  $("ai-key-remove").hidden = !s.api_key_set;
+  $("ai-key").placeholder = s.api_key_set ? "Key is set. Paste a new one to replace it." : "Paste your Anthropic API key";
+}
+
+// Show only the fields the chosen provider uses.
+function syncAiForm(provider) {
+  $("ai-provider").value = provider;
+  $("ai-model-row").hidden = provider === "claude-cli";
+  $("ai-key-row").hidden = provider !== "anthropic-api";
+  $("ai-model").placeholder = AI_MODEL_HINT[provider] || "";
+  $("ai-help").textContent = AI_HELP[provider] || "";
+  $("ai-result").textContent = "";
+  $("ai-result").className = "";
+}
+
+async function loadAi() {
+  try { renderAi(await (await fetch("/api/ai")).json()); } catch (e) { /* the header keeps its default label */ }
+}
+
+async function saveAi(e) {
+  if (e) e.preventDefault();
+  const form = new URLSearchParams({ provider: $("ai-provider").value, model: $("ai-model").value });
+  const key = $("ai-key").value;
+  $("ai-key").value = "";  // clear immediately: the key is never kept in the page
+  if (key.trim()) form.set("api_key", key);
+  let res, data;
+  try { res = await fetch("/api/ai", { method: "POST", body: form }); data = await res.json(); }
+  catch (err) { setAiResult("Could not save. Check the server.", false); return false; }
+  if (!res.ok) { setAiResult(data.error || "Could not save.", false); return false; }
+  renderAi(data);
+  setAiResult("Saved.", true);
+  return true;
+}
+
+function setAiResult(text, ok) {
+  const r = $("ai-result");
+  r.textContent = text;
+  r.className = ok ? "ok" : "bad";
+}
+
+async function testAi() {
+  if (!(await saveAi())) return;
+  setAiResult("Testing...", true);
+  $("ai-test").disabled = true;
+  try {
+    const res = await fetch("/api/ai/test", { method: "POST" });
+    const data = await res.json();
+    setAiResult(res.ok ? `Works: ${aiLabel(aiState)} answered.` : data.error || "Test failed.", res.ok);
+  } catch (err) { setAiResult("Request failed. Check the server.", false); }
+  $("ai-test").disabled = false;
+}
+
+async function removeAiKey() {
+  try { renderAi(await (await fetch("/api/ai/key", { method: "DELETE" })).json()); setAiResult("Key removed.", true); }
+  catch (err) { setAiResult("Could not remove the key.", false); }
+}
+
 async function setKey(e) {
   e.preventDefault();
   const input = $("api-key");
@@ -846,6 +922,16 @@ $("plan-form").addEventListener("submit", (e) => { e.preventDefault(); plan(); }
 $("reset-btn").addEventListener("click", resetAll);
 $("assess-btn").addEventListener("click", assess);
 $("migrate-btn").addEventListener("click", migrate);
+$("ai-btn").addEventListener("click", () => {
+  const bar = $("aibar");
+  bar.hidden = !bar.hidden;
+  $("ai-btn").setAttribute("aria-expanded", String(!bar.hidden));
+  if (!bar.hidden) $("ai-provider").focus();
+});
+$("ai-provider").addEventListener("change", () => syncAiForm($("ai-provider").value));
+$("ai-form").addEventListener("submit", saveAi);
+$("ai-test").addEventListener("click", testAi);
+$("ai-key-remove").addEventListener("click", removeAiKey);
 $("key-btn").addEventListener("click", () => {
   const bar = $("keybar");
   bar.hidden = !bar.hidden;
@@ -875,4 +961,5 @@ $("next").addEventListener("click", () => {
   tryNext();
 })();
 addFolder();
+loadAi();
 restore();

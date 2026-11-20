@@ -5,7 +5,7 @@ and proposes infra plus code changes for Rebuild resources.
 
 ## Run
 
-Needs `az` (logged in) and `claude` (logged in) on PATH.
+Needs `az` (logged in) on PATH, plus at least one AI provider (below).
 
     pip install -r requirements.txt
     python3 -m uvicorn migration_assistant.app:app
@@ -14,3 +14,15 @@ Needs `az` (logged in) and `claude` (logged in) on PATH.
 ## Test
 
     python3 -m pytest
+
+## AI provider
+
+Pick what writes the assessments and plans with the **AI** button in the header (Save, then Test connection).
+
+| Provider | Needs | Notes |
+|---|---|---|
+| Claude Code (CLI), the default | `claude` on PATH and logged in | Prompt goes on stdin, so large source folders work |
+| Anthropic API | an API key | Paste it in the panel, or set `ANTHROPIC_API_KEY`. Kept in server memory only. Model defaults to `claude-opus-5-5` |
+| opencode | `opencode` on PATH with a provider configured | Optional model as `provider/model`. Runs in an empty scratch folder |
+
+To start with a different provider, set `AI_PROVIDER` (`claude-cli`, `anthropic-api`, `opencode`) and optionally `AI_MODEL` before starting the server.

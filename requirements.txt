@@ -1,7 +1,8 @@
+anthropic
 fastapi
-uvicorn
-jinja2
-pyyaml
-pytest
 httpx
+jinja2
+pytest
 python-multipart
+pyyaml
+uvicorn

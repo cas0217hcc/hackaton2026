@@ -5,21 +5,15 @@ from typing import Callable
 
 
 class ClaudeError(Exception):
-    pass
+    """Any problem getting an answer from an AI provider (name kept for the Claude Code backend)."""
 
 
-def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run) -> dict:
-    """Run `claude -p` headless and parse a JSON object from its answer."""
-    full = prompt + "\n\nAnswer with a single JSON object only, no prose."
-    try:
-        proc = runner(["claude", "-p", full], capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise ClaudeError(f"claude timed out after {timeout}s") from None
-    except FileNotFoundError:
-        raise ClaudeError("claude CLI not found on PATH") from None
-    if proc.returncode != 0:
-        raise ClaudeError(f"claude failed: {proc.stderr.strip()}")
-    text = proc.stdout.strip()
+JSON_ONLY = "\n\nAnswer with a single JSON object only, no prose."
+
+
+def parse_json(text: str) -> dict:
+    """Find a JSON object in a model answer: plain, fenced, or surrounded by prose."""
+    text = text.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
     if fence:
         text = fence.group(1).strip()
@@ -30,4 +24,20 @@ def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run)
             continue
         if isinstance(data, dict):
             return data
-    raise ClaudeError("claude did not return valid JSON")
+    raise ClaudeError("the AI did not return valid JSON")
+
+
+def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run) -> dict:
+    """Run `claude -p` headless and parse a JSON object from its answer.
+
+    The prompt goes on stdin: a command-line argument over ~128 KB fails, and big source folders exceed it.
+    """
+    try:
+        proc = runner(["claude", "-p"], input=prompt + JSON_ONLY, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise ClaudeError(f"claude timed out after {timeout}s") from None
+    except FileNotFoundError:
+        raise ClaudeError("claude CLI not found on PATH") from None
+    if proc.returncode != 0:
+        raise ClaudeError(f"claude failed: {proc.stderr.strip()}")
+    return parse_json(proc.stdout)

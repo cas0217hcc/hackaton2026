@@ -57,6 +57,15 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .liveband .btn.ghost:hover { background: var(--live-dark); border-color: #fff; }
 .liveband :focus-visible { outline-color: #fff; }
 #top-confirm .confirm-panel { margin: 0; border-radius: 0; border-width: 0 0 1px; padding: 14px 32px; }
+.keybar #ai-form { display: block; }
+.ai-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.ai-row > label { min-width: 230px; }
+.ai-row select { padding: 8px 12px; border: 1px solid var(--field); border-radius: 6px; font: inherit; color: var(--ink); background: var(--paper); min-width: 260px; }
+.ai-row input { max-width: 460px; }
+.ai-help { margin: 0 0 12px; color: var(--mute); font-size: 13px; max-width: 80ch; }
+#ai-result { font-weight: 600; }
+#ai-result.ok { color: var(--ok); }
+#ai-result.bad { color: var(--bad); }
 .restored { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 32px; background: var(--acc-tint); color: var(--acc-dark); border-bottom: 1px solid #cfd1ea; font-size: 13px; }
 .link { padding: 0; border: 0; background: none; color: var(--acc); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link:hover { color: var(--acc-dark); }
