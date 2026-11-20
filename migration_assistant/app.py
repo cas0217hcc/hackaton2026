@@ -80,6 +80,14 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     def api_state():
         return _dump(state)
 
+    @app.post("/api/reset")
+    def api_reset():
+        state.clear()
+        state.update(_empty_state())
+        if state_file is not None:
+            state_file.unlink(missing_ok=True)
+        return _dump(state)
+
     @app.post("/api/discover")
     def api_discover(resource_group: str = Form(DEFAULT_RG)):
         try:

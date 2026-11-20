@@ -283,6 +283,42 @@ async function restore() {
   }
 }
 
+// Two-step reset: first click arms the button, second click within 4s wipes saved state.
+let resetTimer = null;
+function disarmReset() {
+  clearTimeout(resetTimer);
+  const b = $("reset-btn");
+  b.classList.remove("confirm");
+  b.textContent = "Start over";
+}
+async function resetAll() {
+  const b = $("reset-btn");
+  if (!b.classList.contains("confirm")) {
+    b.classList.add("confirm");
+    b.textContent = "Click again to erase saved results";
+    resetTimer = setTimeout(disarmReset, 4000);
+    return;
+  }
+  disarmReset();
+  try {
+    const res = await fetch("/api/reset", { method: "POST" });
+    if (!res.ok) throw new Error();
+  } catch (e) {
+    setError("Reset failed. Check the server and retry.", resetAll);
+    return;
+  }
+  setError("");
+  Object.keys(done).forEach((k) => { done[k] = false; });
+  Object.keys(resourceTypes).forEach((k) => delete resourceTypes[k]);
+  ["assess", "plan", "migrate"].forEach((s) => { setLocked(s, true); $(s + "-out").replaceChildren(); });
+  $("discover-out").replaceChildren(el("p", { class: "empty" }, "No resources loaded yet. Enter a resource group and discover it."));
+  $("rg").value = $("rg").defaultValue;
+  $("folder-list").replaceChildren();
+  addFolder();
+  $("restored").hidden = true;
+  show("discover");
+}
+
 document.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => {
   const stage = b.dataset.stage;
   show(stage);
@@ -291,6 +327,7 @@ document.querySelectorAll(".step").forEach((b) => b.addEventListener("click", ()
 $("discover-form").addEventListener("submit", (e) => { e.preventDefault(); discover(); });
 $("add-folder").addEventListener("click", () => addFolder());
 $("plan-form").addEventListener("submit", (e) => { e.preventDefault(); plan(); });
+$("reset-btn").addEventListener("click", resetAll);
 $("assess-btn").addEventListener("click", assess);
 $("migrate-btn").addEventListener("click", migrate);
 $("retry").addEventListener("click", () => lastAction && lastAction());

@@ -140,3 +140,25 @@ def test_source_dirs_persist_and_old_single_dir_state_loads(tmp_path):
 def test_static_urls_are_versioned_to_defeat_browser_cache():
     html = client([VM]).get("/").text
     assert "/static/app.js?v=" in html and "/static/style.css?v=" in html
+
+
+def test_reset_clears_state_and_saved_file(tmp_path):
+    f = tmp_path / "s.json"
+    c = persistent_client([VM, KV], f)
+    run_to_assess(c)
+    assert f.exists()
+    r = c.post("/api/reset")
+    assert r.status_code == 200
+    s = c.get("/api/state").json()
+    assert s["resources"] == [] and s["assessments"] == [] and s["plans"] == [] and s["calls"] == []
+    assert s["resource_group"] == "hackaton-2026-rg" and s["source_dirs"] == []
+    assert not f.exists()
+    assert persistent_client([], f).get("/api/state").json()["resources"] == []
+
+
+def test_reset_without_persistence_and_when_nothing_saved():
+    c = client([VM])
+    run_to_assess(c)
+    assert c.post("/api/reset").status_code == 200
+    assert c.post("/api/reset").status_code == 200  # idempotent
+    assert c.get("/export").text.strip().startswith("# Azure to Leaseweb")
