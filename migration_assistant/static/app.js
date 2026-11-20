@@ -279,17 +279,46 @@ function renderDiscover(resources) {
   setLocked("assess", false);
 }
 
+// Route filter on the Assess table: the chips toggle routes; nothing selected shows everything.
 function renderAssess(assessments) {
+  const picked = new Set();
+  let query = "";
+  const rows = assessments.map((a) => {
+    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale));
+    tr.dataset.text = [a.resource_name, a.target, a.rationale, LABELS[a.route]].join(" ").toLowerCase();
+    return tr;
+  });
+  const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
+  const note = el("span", { class: "filter-note", role: "status", "aria-live": "polite" });
+  const clear = el("button", { type: "button", class: "link", hidden: "" }, "Show all");
+  const chips = [];
+  const apply = () => {
+    let shown = 0;
+    rows.forEach((tr) => {
+      const visible = (!picked.size || picked.has(tr.dataset.route)) && (!query || tr.dataset.text.includes(query));
+      tr.hidden = !visible;
+      if (visible) shown++;
+    });
+    chips.forEach(({ route, btn }) => btn.setAttribute("aria-pressed", String(picked.has(route))));
+    const filtering = picked.size > 0 || query !== "";
+    clear.hidden = !filtering;
+    note.textContent = filtering ? (shown ? `Showing ${shown} of ${rows.length}` : "Nothing matches") : "";
+  };
   const stat = (route) => {
     const n = assessments.filter((a) => a.route === route).length;
-    return el("span", { class: "stat " + route }, el("b", {}, String(n)), LABELS[route]);
+    const btn = el("button", { type: "button", class: "stat " + route, "aria-pressed": "false", "aria-label": `${LABELS[route]}: ${n}. Filter the table.` }, el("b", {}, String(n)), LABELS[route]);
+    btn.disabled = n === 0;
+    btn.addEventListener("click", () => { if (picked.has(route)) picked.delete(route); else picked.add(route); apply(); });
+    chips.push({ route, btn });
+    return btn;
   };
+  search.addEventListener("input", () => { query = search.value.trim().toLowerCase(); apply(); });
+  clear.addEventListener("click", () => { picked.clear(); query = ""; search.value = ""; apply(); });
   $("assess-out").replaceChildren(
-    el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included")),
+    el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
       el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately."),
-    table(["Resource", "Leaseweb target", "Route", "Why"], assessments.map((a) =>
-      el("tr", {}, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale)))));
+    table(["Resource", "Leaseweb target", "Route", "Why"], rows));
   done.assess = true;
   setLocked("plan", false);
 }
