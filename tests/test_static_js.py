@@ -13,5 +13,5 @@ def test_no_duplicate_top_level_functions():
 
 
 def test_row_run_button_state_is_set_before_the_finished_row_early_return():
-    body = re.search(r"function updateRowStatus\(row\) \{(.*?)\n\}", JS, flags=re.S).group(1)
+    body = re.search(r"function updateRowStatus\(row[^)]*\) \{(.*?)\n\}", JS, flags=re.S).group(1)
     assert body.index("row.runBtn.disabled") < body.index("if (row.ran) return;")

@@ -77,6 +77,8 @@ function show(stage) {
     const b = document.querySelector(`[data-stage="${s}"]`);
     b.classList.toggle("on", s === stage);
     b.classList.toggle("done", !!done[s]);
+    if (s === stage) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
+    b.setAttribute("aria-label", `Step ${STAGES.indexOf(s) + 1}: ${s}${done[s] ? ", done" : ""}`);
   });
   const i = STAGES.indexOf(stage);
   const next = $("next");
@@ -105,6 +107,50 @@ function setError(msg, retry) {
   $("error").hidden = !msg;
   $("error-text").textContent = msg || "";
   lastAction = retry || null;
+}
+
+// One inline confirmation at a time: a panel with explicit Confirm and Cancel, no timers.
+// `mount(panel)` puts the panel on the page and returns the node to remove afterwards.
+let closeConfirm = null;
+function askInline(mount, { message, details = [], confirmLabel, danger = false, returnFocus = null }) {
+  if (closeConfirm) closeConfirm(false);
+  return new Promise((resolve) => {
+    const yes = el("button", { type: "button", class: "btn" + (danger ? " danger" : "") }, confirmLabel);
+    const no = el("button", { type: "button", class: "btn secondary" }, "Cancel");
+    const panel = el("div", { class: "confirm-panel" + (danger ? " danger" : ""), role: "group", "aria-label": message },
+      el("p", { class: "confirm-msg" }, message),
+      ...(details.length ? [el("ul", { class: "confirm-list" }, ...details.map((d) => el("li", {}, d)))] : []),
+      el("div", { class: "confirm-actions" }, no, yes));
+    const node = mount(panel);
+    const onKey = (e) => { if (e.key === "Escape") finish(false); };
+    function finish(ok) {
+      document.removeEventListener("keydown", onKey);
+      node.remove();
+      closeConfirm = null;
+      if (returnFocus) returnFocus.focus();
+      resolve(ok);
+    }
+    closeConfirm = finish;
+    yes.addEventListener("click", () => finish(true));
+    no.addEventListener("click", () => finish(false));
+    document.addEventListener("keydown", onKey);
+    no.focus();  // the safe choice gets focus
+  });
+}
+
+// "a", "a and b", "a, b and c"
+const listOf = (items) => (items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1]);
+
+const STAGE_RESULTS = { assess: "the assessment", plan: "the plans", migrate: "the migration values" };
+
+// Re-running a stage clears everything after it. Ask first when there is something to lose.
+async function confirmWipe(stage, anchor, verb, trigger) {
+  // Migration values count only once the user has typed or run something there.
+  const later = STAGES.slice(STAGES.indexOf(stage) + 1).filter((s) => done[s] || (s === "migrate" && migrateRows.some((r) => r.ran || r.dirty)));
+  if (!later.length) return true;
+  return askInline((p) => { anchor.after(p); return p; }, {
+    message: `${verb} again clears ${listOf(later.map((s) => STAGE_RESULTS[s]))}.`,
+    confirmLabel: `${verb} again`, returnFocus: trigger });
 }
 
 async function call(path, form, outEl, action, method = "POST") {
@@ -256,11 +302,16 @@ function renderPlan(plans, message) {
     out.replaceChildren(el("p", { class: "empty" }, message));
   } else {
     const toggleAll = el("button", { type: "button", class: "btn secondary toggle-all" }, "Expand all");
+    const syncToggle = () => {
+      const cards = [...out.querySelectorAll("details.plan")];
+      toggleAll.textContent = cards.length && cards.every((d) => d.open) ? "Collapse all" : "Expand all";
+    };
     toggleAll.addEventListener("click", () => {
       const open = toggleAll.textContent === "Expand all";
       out.querySelectorAll("details.plan").forEach((d) => { d.open = open; });
-      toggleAll.textContent = open ? "Collapse all" : "Expand all";
+      syncToggle();
     });
+    out.addEventListener("toggle", syncToggle, true);  // a card opened or closed by hand
     out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}`), toggleAll), ...plans.map((p) => {
       const card = el("details", { class: "plan" },
         el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
@@ -293,19 +344,27 @@ let migrateRows = [];
 let chainIds = {};  // ids returned by earlier live calls, e.g. instanceId
 
 function refreshMode() {
-  const text = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
-  $("mode-text").textContent = text;
+  $("mode-text").textContent = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
   $("mode").classList.toggle("live", live);
+  $("liveband").hidden = !live;
   $("key-btn").textContent = live ? "API key set" : "API key";
   $("key-remove").hidden = !live;
   $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
   $("migrate-btn").classList.toggle("danger", live);
   $("migrate-title").textContent = live ? "Live migration" : "Dry-run migration";
   $("migrate-desc").textContent = live
-    ? "These Leaseweb API calls are sent in the order shown and may create billable resources. IDs from earlier responses are filled into later calls. Fill in every other value first; calls with placeholders are skipped."
+    ? "These Leaseweb API calls are sent in the order shown and can create billable resources. IDs from earlier responses are filled into later calls. A call that still needs values is skipped."
     : "The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.";
-  disarmRun();
-  refreshRowButtons();
+  refreshRows();
+}
+
+// The server may have lost its key (it is kept in memory only). Follow what the server says.
+function syncLive(serverLive) {
+  if (serverLive === live) return;
+  const wasLive = live;
+  live = serverLive;
+  refreshMode();
+  if (wasLive) setError("The server no longer has the API key, so this ran as a dry run and nothing was sent. Set the key again to go live.", null);
 }
 
 const PLACEHOLDER = /<([^<>]+)>/;
@@ -353,9 +412,16 @@ function buildFields(c, idPrefix) {
       f.input = f.kind === "json" ? el("textarea", { ...attrs, rows: "4" }) : el("input", { ...attrs, placeholder: f.hint });
     }
     f.input.value = f.initial;
+    if (f.required) f.input.setAttribute("aria-required", "true");
+    f.help = f.where === "path" ? PARAM_HELP[f.key] || "" : "";
   });
   return fields;
 }
+
+// Where to find a value the tool cannot know.
+const PARAM_HELP = {
+  objectStorageId: "ID of an Object Storage product in your Leaseweb account. Order one in the Leaseweb portal if you have none.",
+};
 
 const missingField = (f) => (f.kind === "json" ? PLACEHOLDER.test(f.input.value) : f.required && !f.input.value.trim());
 
@@ -381,24 +447,66 @@ function collectCall(row) {
       body[f.key] = v === "" ? f.original : v;
     }
   }
-  return { method: row.method, path, operation_id: row.operation_id, body };
+  return { method: row.method, path, operation_id: row.operation_id, body, source: row.source };
 }
 
-function updateRowStatus(row) {
+// What a run-all would do with each row, in order. A row is sent only when its values are filled in
+// and every id it needs either exists already or comes from a row that is itself being sent.
+function runPlan() {
+  const have = new Set(Object.keys(chainIds));
+  const supplies = (row) => {
+    const out = new Set();
+    migrateRows.forEach((r) => Object.entries(r.chained).forEach(([param, op]) => { if (op === row.operation_id) out.add(param); }));
+    return out;
+  };
+  return migrateRows.map((row) => {
+    const gives = supplies(row);
+    if (row.sent) { gives.forEach((p) => have.add(p)); return { row, action: "done" }; }
+    const missing = row.fields.filter(missingField).length;
+    const waiting = Object.entries(row.chained).filter(([param]) => !have.has(param)).map(([, op]) => op);
+    if (missing || waiting.length) {
+      gives.forEach((p) => have.delete(p));
+      return { row, action: "skip", missing, waiting, why: missing ? `needs ${missing} value${missing > 1 ? "s" : ""}` : `waits for ${waiting.join(", ")}` };
+    }
+    gives.forEach((p) => have.add(p));
+    return { row, action: "send" };
+  });
+}
+
+function updateRowStatus(row, planned) {
   const missing = row.fields.filter(missingField).length;
+  const noId = Object.keys(row.chained).filter((p) => !chainIds[p]);
   row.tr.classList.toggle("needs", missing > 0);
-  row.runBtn.disabled = missing > 0;  // also for rows that already ran, so they can be retried
-  row.runBtn.title = missing > 0 ? "Fill in the required values first" : "";
+  // Single runs: in LIVE a call cannot run before the call that supplies its id has succeeded.
+  row.runBtn.disabled = busy || missing > 0 || (live && noId.length > 0);  // also for rows that already ran, so they can be retried
+  row.runBtn.title = missing > 0 ? "Fill in the required values first" : (live && noId.length ? `Run ${row.chained[noId[0]]} first` : "");
   if (row.ran) return;
   const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, chainIds[p] ? `${p} = ${chainIds[p]} (from ${op})` : `${p} comes from ${op}`));
+  const waiting = planned && planned.action === "skip" && !missing;
   row.status.replaceChildren(
-    missing ? el("span", { class: "pill needs" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`) : el("span", { class: "pill ready" }, "Ready"),
+    missing ? el("span", { class: "pill needs" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`)
+      : waiting ? el("span", { class: "pill neutral" }, "Waiting") : el("span", { class: "pill ready" }, "Ready"),
+    ...(waiting ? [el("div", { class: "status-note" }, `Needs ${planned.waiting.join(", ")} first`)] : []),
     ...notes);
 }
+
+// A row's status depends on the rows before it, so refresh them together.
+function refreshRows() {
+  const plan = runPlan();
+  migrateRows.forEach((r, i) => {
+    r.runBtn.classList.toggle("danger", live);
+    r.runBtn.textContent = live ? "Run live" : "Run";
+    updateRowStatus(r, plan[i]);
+  });
+  $("migrate-btn").disabled = busy;
+}
+
+const rowLabel = (row) => `${row.index + 1}. ${row.operation_id}${row.source ? " for " + row.source : ""}`;
 
 function renderMigrate(calls) {
   const out = $("migrate-out");
   migrateRows = [];
+  $("migrate-note").replaceChildren();
   if (!calls.length) {
     out.replaceChildren(el("p", { class: "empty" }, "No directly migratable resources."));
     done.migrate = true;
@@ -407,29 +515,39 @@ function renderMigrate(calls) {
   const rows = calls.map((c, i) => {
     const fields = buildFields(c, `v${i}`);
     const values = fields.length
-      ? el("div", { class: "values" }, ...fields.flatMap((f) => [
-          el("label", { class: "vlabel", for: f.input.id }, f.where === "path" ? `{${f.key}}` : f.key, ...(f.required ? [el("span", { class: "req", title: "Required" }, " *")] : [])),
-          f.input]))
+      ? el("div", { class: "values" }, ...fields.flatMap((f) => {
+          if (f.help) f.input.setAttribute("aria-describedby", f.input.id + "-help");
+          return [
+            el("label", { class: "vlabel", for: f.input.id }, f.where === "path" ? `{${f.key}}` : f.key, ...(f.required ? [el("span", { class: "req", "aria-hidden": "true" }, " *")] : [])),
+            el("div", { class: "vfield" }, f.input, ...(f.help ? [el("div", { class: "vhint", id: f.input.id + "-help" }, f.help)] : []))];
+        }))
       : el("p", { class: "note" }, "No values to set");
-    const status = el("td", { class: "status" });
+    const status = el("td", { class: "status", "aria-live": "polite" });
     const runBtn = el("button", { type: "button", class: "btn secondary row-run", "aria-label": `Run call ${i + 1}: ${c.operation_id}` }, "Run");
+    const source = c.source
+      ? el("div", { class: "call-source" }, icon(resourceTypes[c.source], resourceKinds[c.source]), el("span", {}, "for ", el("span", { class: "id" }, c.source)))
+      : "";
     const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)),
-      el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`)),
+      el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`), source),
       el("td", {}, values), status, el("td", { class: "run-cell" }, runBtn));
-    const row = { tr, status, runBtn, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false };
-    fields.forEach((f) => ["input", "change"].forEach((ev) => f.input.addEventListener(ev, () => { row.ran = false; updateRowStatus(row); })));
+    const row = { tr, status, runBtn, index: i, method: c.method, operation_id: c.operation_id, source: c.source || "", chained: c.chained || {},
+      pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false, sent: false };
+    fields.forEach((f) => {
+      ["input", "change"].forEach((ev) => f.input.addEventListener(ev, () => { row.ran = false; row.sent = false; row.dirty = true; refreshRows(); }));
+      if (f.input.tagName === "INPUT") f.input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runRow(row); } });
+    });
     runBtn.addEventListener("click", () => runRow(row));
     migrateRows.push(row);
-    updateRowStatus(row);
     return tr;
   });
   out.replaceChildren(table(["Order", "Call", "Values", "Status", "Run"], rows));
   done.migrate = false;
-  refreshRowButtons();
+  refreshRows();
 }
 
 function showResult(row, r) {
   row.ran = true;
+  row.sent = !!r.sent && r.status < 300;
   let pillEl, note = "";
   if (r.error) { pillEl = el("span", { class: "pill bad" }, "Error"); note = r.error; }
   else if (r.skipped) { pillEl = el("span", { class: "pill neutral" }, "Skipped"); note = r.reason; }
@@ -441,58 +559,55 @@ function showResult(row, r) {
   row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note));
 }
 
-function showResults(results) {
-  results.forEach((r, i) => { if (migrateRows[i]) showResult(migrateRows[i], r); });
+// Errors that belong to one row are shown in that row, not in the page banner.
+function rowError(row, message) {
+  row.ran = true;
+  row.status.replaceChildren(el("span", { class: "pill bad" }, "Error"), el("div", { class: "status-note" }, message));
 }
 
-// Remembered ids can unlock rows that depend on them; refresh the notes of rows that have not run.
 function setChain(chain) {
   chainIds = chain || {};
-  migrateRows.forEach((r) => { if (!r.ran) updateRowStatus(r); });
+  refreshRows();
 }
 
-function refreshRowButtons() {
-  migrateRows.forEach((r) => {
-    r.runBtn.classList.remove("confirm");
-    r.runBtn.classList.toggle("danger", live);
-    r.runBtn.textContent = live ? "Run live" : "Run";
-  });
+// A request is in flight: run buttons are locked so nothing can be sent twice.
+let busy = false;
+function setBusy(on) {
+  busy = on;
+  refreshRows();
 }
 
-function disarmRow(row) {
-  clearTimeout(row.armTimer);
-  row.runBtn.classList.remove("confirm");
-  row.runBtn.textContent = live ? "Run live" : "Run";
-}
+const withIds = (path) => path.replace(/\{([^}/]+)\}/g, (m, p) => chainIds[p] || m);
 
-// Run one call. Live runs need a second click, like the full migration.
+// Run one call. A live call asks for an explicit Send first.
 async function runRow(row) {
-  if (live && !row.runBtn.classList.contains("confirm")) {
-    row.runBtn.classList.add("confirm");
-    row.runBtn.textContent = "Click again to send LIVE";
-    row.armTimer = setTimeout(() => disarmRow(row), 15000);
-    row.runBtn.addEventListener("blur", () => disarmRow(row), { once: true });  // clicking elsewhere cancels
-    return;
-  }
-  disarmRow(row);
+  if (busy || row.runBtn.disabled) return;
   let call;
-  try { call = collectCall(row); } catch (e) { setError(`${row.operation_id}: ${e.message}.`, null); return; }
+  try { call = collectCall(row); } catch (e) { rowError(row, e.message + "."); return; }
+  if (live) {
+    const ok = await askInline((p) => { const tr = el("tr", { class: "confirm-row" }, el("td", { colspan: "5" }, p)); row.tr.after(tr); return tr; }, {
+      message: `Send ${rowLabel(row)} to Leaseweb now?`,
+      details: [el("span", { class: "code" }, `${call.method} ${withIds(call.path)}`), "This is a live call and can create a billable resource."],
+      confirmLabel: "Send live", danger: true, returnFocus: row.runBtn });
+    if (!ok) return;
+  }
   setError("");
-  row.runBtn.disabled = true;
+  $("migrate-note").replaceChildren();
+  setBusy(true);
   let res, data;
   try {
     res = await fetch("/api/migrate/run-one", { method: "POST", body: new URLSearchParams({ call: JSON.stringify(call) }) });
     data = await res.json();
   } catch (e) {
-    setError("Request failed. Check the server and retry.", null);
-    updateRowStatus(row);
+    setBusy(false);
+    rowError(row, "Request failed. Check the server and retry.");
     return;
   }
-  if (!res.ok) { setError(data.error || "Request failed", null); updateRowStatus(row); return; }
-  live = data.live;
+  if (!res.ok) { setBusy(false); rowError(row, data.error || "Request failed"); return; }
   showResult(row, data.result);
+  busy = false;
   setChain(data.chain);
-  updateRowStatus(row);
+  syncLive(data.live);
 }
 
 async function prepareMigrate() {
@@ -504,42 +619,57 @@ async function prepareMigrate() {
   refreshMode();
 }
 
-// Live runs need a second click so a stray click can never spend money.
-let runTimer = null;
-function disarmRun() {
-  clearTimeout(runTimer);
-  const b = $("migrate-btn");
-  b.classList.remove("confirm");
-  b.textContent = live ? "Run LIVE migration" : "Run dry-run migration";
-}
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+// Run every call that has not been sent yet, in order. A live run first lists exactly what will be
+// sent and what will be skipped, and waits for an explicit Send.
 async function migrate() {
-  if (!migrateRows.length) return;
-  const b = $("migrate-btn");
-  if (live && !b.classList.contains("confirm")) {
-    b.classList.add("confirm");
-    const skipped = migrateRows.filter((r) => r.fields.some(missingField)).length;
-    b.textContent = `Click again to send ${migrateRows.length - skipped} calls to Leaseweb` + (skipped ? ` (${skipped} need values and will be skipped)` : "");
-    runTimer = setTimeout(disarmRun, 15000);
-    b.addEventListener("blur", disarmRun, { once: true });  // clicking elsewhere cancels
-    return;
-  }
-  disarmRun();
+  if (busy || !migrateRows.length) return;
+  const btn = $("migrate-btn");
+  const note = $("migrate-note");
+  const plan = runPlan();
+  const todo = plan.filter((p) => p.action !== "done");
+  const send = todo.filter((p) => p.action === "send");
+  const skip = todo.filter((p) => p.action === "skip");
+  const sentBefore = plan.length - todo.length;
+  note.replaceChildren();
+  if (!todo.length) { note.replaceChildren(el("p", { class: "note" }, "Every call has already been sent. Change a value to send a call again.")); return; }
   const calls = [];
-  for (let i = 0; i < migrateRows.length; i++) {
-    try { calls.push(collectCall(migrateRows[i])); } catch (e) { setError(`Call ${i + 1}: ${e.message}.`, null); return; }
+  for (const p of todo) {
+    try { calls.push(collectCall(p.row)); } catch (e) { rowError(p.row, e.message + "."); return; }
+  }
+  if (live) {
+    if (!send.length) { note.replaceChildren(el("p", { class: "note" }, "Nothing can be sent yet. Fill in the required values first.")); return; }
+    const ok = await askInline((p) => { note.replaceChildren(p); return p; }, {
+      message: `Send ${plural(send.length, "call")} to Leaseweb now? They can create billable resources.`,
+      details: [
+        ...send.map((p) => el("span", {}, el("b", {}, "Send "), rowLabel(p.row))),
+        ...skip.map((p) => el("span", { class: "skip" }, el("b", {}, "Skip "), `${rowLabel(p.row)} (${p.why})`)),
+        ...(sentBefore ? [el("span", { class: "skip" }, `${plural(sentBefore, "call")} already sent and left alone`)] : []),
+      ],
+      confirmLabel: `Send ${plural(send.length, "call")}`, danger: true, returnFocus: btn });
+    if (!ok) return;
   }
   setError("");
-  const form = new URLSearchParams({ calls: JSON.stringify(calls) });
+  setBusy(true);
+  btn.textContent = live ? `Sending ${plural(send.length, "call")}...` : "Running dry run...";
   let res, data;
   try {
-    res = await fetch("/api/migrate", { method: "POST", body: form });
+    res = await fetch("/api/migrate", { method: "POST", body: new URLSearchParams({ calls: JSON.stringify(calls) }) });
     data = await res.json();
-  } catch (e) { setError("Request failed. Check the server and retry.", migrate); return; }
-  if (!res.ok) { setError(data.error || "Request failed", migrate); return; }
-  live = data.live;
-  showResults(data.results);
+  } catch (e) { setBusy(false); refreshMode(); setError("Request failed. Check the server and retry.", migrate); return; }
+  if (!res.ok) { setBusy(false); refreshMode(); setError(data.error || "Request failed", migrate); return; }
+  data.results.forEach((r, i) => showResult(todo[i].row, r));
+  busy = false;
   setChain(data.chain);
+  refreshMode();
+  syncLive(data.live);
+  const ok = data.results.filter((r) => r.sent && r.status < 300).length;
+  const failed = data.results.filter((r) => r.error || (r.sent && r.status >= 300)).length;
+  const skipped = data.results.filter((r) => r.skipped).length;
+  note.replaceChildren(el("p", { class: "run-summary" + (failed ? " bad" : "") }, data.live
+    ? `Live run finished: ${plural(ok, "call")} sent` + (failed ? `, ${failed} failed` : "") + (skipped ? `, ${skipped} skipped` : "") + ". See each row for the response."
+    : `Dry run finished: ${plural(data.results.length, "call")} checked, nothing sent.`));
   done.migrate = true;
   show("migrate");
 }
@@ -570,6 +700,8 @@ async function removeKey() {
 }
 
 async function discover() {
+  const trigger = $("discover-form").querySelector("button[type=submit]");
+  if (!(await confirmWipe("discover", $("discover-form"), "Discover", trigger))) return;
   const data = await call("/api/discover", { resource_group: $("rg").value }, $("discover-out"), discover);
   if (!data) return;
   invalidateAfter("discover");
@@ -578,6 +710,7 @@ async function discover() {
 }
 
 async function assess() {
+  if (done.assess && !(await confirmWipe("assess", $("assess-btn").parentElement, "Assess", $("assess-btn")))) return;
   const data = await call("/api/assess", null, $("assess-out"), assess);
   if (!data) return;
   invalidateAfter("assess");
@@ -640,6 +773,7 @@ async function plan() {
   const form = new URLSearchParams();
   folderInputs().map((i) => i.value.trim()).filter(Boolean).forEach((v) => form.append("source_dirs", v));
   const submit = $("plan-form").querySelector("button[type=submit]");
+  if (!(await confirmWipe("plan", $("plan-form"), "Generate the plan", submit))) return;
   submit.disabled = true;
   const pending = call("/api/plan", form, $("plan-out"), plan);
   const stop = startPlanProgress($("plan-out"));
@@ -672,23 +806,13 @@ async function restore() {
   }
 }
 
-// Two-step reset: first click arms the button, second click within 4s wipes saved state.
-let resetTimer = null;
-function disarmReset() {
-  clearTimeout(resetTimer);
-  const b = $("reset-btn");
-  b.classList.remove("confirm");
-  b.textContent = "Start over";
-}
+// Start over asks first, with the same inline Confirm / Cancel as every other destructive action.
 async function resetAll() {
-  const b = $("reset-btn");
-  if (!b.classList.contains("confirm")) {
-    b.classList.add("confirm");
-    b.textContent = "Click again to erase saved results";
-    resetTimer = setTimeout(disarmReset, 4000);
-    return;
-  }
-  disarmReset();
+  const ok = await askInline((p) => { $("top-confirm").replaceChildren(p); return p; }, {
+    message: "Erase all saved results and start over?",
+    details: ["Discovered resources, the assessment, plans and migration values are deleted. The API key stays."],
+    confirmLabel: "Erase and start over", danger: true, returnFocus: $("reset-btn") });
+  if (!ok) return;
   try {
     const res = await fetch("/api/reset", { method: "POST" });
     if (!res.ok) throw new Error();
@@ -705,6 +829,8 @@ async function resetAll() {
   $("folder-list").replaceChildren();
   addFolder();
   migrateRows = [];
+  chainIds = {};
+  $("migrate-note").replaceChildren();
   $("restored").hidden = true;
   show("discover");
 }
@@ -728,7 +854,9 @@ $("key-btn").addEventListener("click", () => {
 });
 $("key-form").addEventListener("submit", setKey);
 $("key-remove").addEventListener("click", removeKey);
+$("live-off").addEventListener("click", removeKey);
 $("retry").addEventListener("click", () => lastAction && lastAction());
+$("restored-dismiss").addEventListener("click", () => { $("restored").hidden = true; });
 $("next").addEventListener("click", () => {
   const to = $("next").dataset.to;
   if (to === "assess" && !done.assess) { show("assess"); assess(); } else show(to);
