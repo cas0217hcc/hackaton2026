@@ -278,12 +278,6 @@ function renderPlan(plans, message) {
 let live = false;
 let migrateRows = [];
 
-// {params} that an earlier call's response will fill in are not "missing".
-function needsValues(path, body, chained) {
-  const open = (path.match(/\{[^}/]+\}/g) || []).filter((m) => !(m.slice(1, -1) in chained));
-  return open.length > 0 || /<[^<>]+>/.test(body);
-}
-
 function refreshMode() {
   const text = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
   $("mode-text").textContent = text;
@@ -299,12 +293,67 @@ function refreshMode() {
   disarmRun();
 }
 
+const PLACEHOLDER = /<([^<>]+)>/;
+
+// One labelled input per value a call takes. Required = still a <placeholder> or an unfilled {path param}
+// (params an earlier response fills in, "chained", are not asked for).
+function buildFields(c, idPrefix) {
+  const chained = c.chained || {};
+  const fields = [];
+  (c.path.match(/\{[^}/]+\}/g) || []).forEach((token) => {
+    const key = token.slice(1, -1);
+    if (!(key in chained)) fields.push({ where: "path", key, token, required: true, kind: "string", initial: "", hint: "required" });
+  });
+  Object.entries(c.body || {}).forEach(([key, v]) => {
+    if (typeof v === "string") {
+      const ph = PLACEHOLDER.test(v);
+      fields.push({ where: "body", key, required: ph, kind: "string", initial: ph ? "" : v, hint: ph ? v.match(PLACEHOLDER)[1] : "", original: v });
+    } else if (typeof v === "number") {
+      fields.push({ where: "body", key, required: false, kind: "number", initial: String(v), hint: "" });
+    } else {
+      const text = JSON.stringify(v, null, 1);
+      fields.push({ where: "body", key, required: PLACEHOLDER.test(text), kind: "json", initial: text, hint: "" });
+    }
+  });
+  fields.forEach((f) => {
+    const attrs = { id: `${idPrefix}-${f.key}`, spellcheck: "false", autocomplete: "off", class: "value-input" };
+    f.input = f.kind === "json" ? el("textarea", { ...attrs, rows: "4" }) : el("input", { ...attrs, placeholder: f.hint });
+    f.input.value = f.initial;
+  });
+  return fields;
+}
+
+const missingField = (f) => (f.kind === "json" ? PLACEHOLDER.test(f.input.value) : f.required && !f.input.value.trim());
+
+// Turn the filled-in form back into a call. Empty required values keep their placeholder, so the
+// server skips that call instead of ever sending a guess.
+function collectCall(row) {
+  let path = row.pathTemplate;
+  const body = { ...row.baseBody };
+  for (const f of row.fields) {
+    const v = f.input.value.trim();
+    if (f.where === "path") { if (v) path = path.replace(f.token, encodeURIComponent(v)); continue; }
+    if (f.kind === "json") {
+      try { body[f.key] = JSON.parse(f.input.value); } catch (e) { throw new Error(`${f.key} is not valid JSON`); }
+    } else if (f.kind === "number") {
+      body[f.key] = v !== "" && !isNaN(Number(v)) ? Number(v) : v;
+    } else if (v === "" && !f.required) {
+      delete body[f.key];
+    } else {
+      body[f.key] = v === "" ? f.original : v;
+    }
+  }
+  return { method: row.method, path, operation_id: row.operation_id, body };
+}
+
 function updateRowStatus(row) {
-  const missing = needsValues(row.path.value, row.body.value, row.chained);
-  row.tr.classList.toggle("needs", missing);
+  const missing = row.fields.filter(missingField).length;
+  row.tr.classList.toggle("needs", missing > 0);
   if (row.ran) return;
   const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, `${p} comes from ${op}`));
-  row.status.replaceChildren(missing ? el("span", { class: "pill rebuild" }, "Needs values") : el("span", { class: "pill included" }, "Ready"), ...notes);
+  row.status.replaceChildren(
+    missing ? el("span", { class: "pill rebuild" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`) : el("span", { class: "pill included" }, "Ready"),
+    ...notes);
 }
 
 function renderMigrate(calls) {
@@ -316,19 +365,23 @@ function renderMigrate(calls) {
     return;
   }
   const rows = calls.map((c, i) => {
-    const path = el("input", { class: "path-edit code", "aria-label": `Path of call ${i + 1}` });
-    path.value = c.path;
-    const body = el("textarea", { class: "body-edit", rows: Object.keys(c.body).length ? "5" : "1", spellcheck: "false", "aria-label": `Request body of call ${i + 1}`, placeholder: "No request body" });
-    body.value = Object.keys(c.body).length ? JSON.stringify(c.body, null, 1) : "";
+    const fields = buildFields(c, `v${i}`);
+    const values = fields.length
+      ? el("div", { class: "values" }, ...fields.flatMap((f) => [
+          el("label", { class: "vlabel", for: f.input.id }, f.where === "path" ? `{${f.key}}` : f.key, ...(f.required ? [el("span", { class: "req", title: "Required" }, " *")] : [])),
+          f.input]))
+      : el("p", { class: "note" }, "No values to set");
     const status = el("td", { class: "status" });
-    const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)), el("td", { class: "code" }, c.method), el("td", {}, path), el("td", { class: "code" }, c.operation_id), el("td", {}, body), status);
-    const row = { tr, path, body, status, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, ran: false };
-    [path, body].forEach((f) => f.addEventListener("input", () => { row.ran = false; updateRowStatus(row); }));
+    const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)),
+      el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`)),
+      el("td", {}, values), status);
+    const row = { tr, status, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false };
+    fields.forEach((f) => f.input.addEventListener("input", () => { row.ran = false; updateRowStatus(row); }));
     migrateRows.push(row);
     updateRowStatus(row);
     return tr;
   });
-  out.replaceChildren(table(["Order", "Method", "Path", "Operation", "Request body", "Status"], rows));
+  out.replaceChildren(table(["Order", "Call", "Values", "Status"], rows));
   done.migrate = false;
 }
 
@@ -371,19 +424,15 @@ async function migrate() {
   const b = $("migrate-btn");
   if (live && !b.classList.contains("confirm")) {
     b.classList.add("confirm");
-    b.textContent = `Click again to send ${migrateRows.length} calls to Leaseweb`;
+    const skipped = migrateRows.filter((r) => r.fields.some(missingField)).length;
+    b.textContent = `Click again to send ${migrateRows.length - skipped} calls to Leaseweb` + (skipped ? ` (${skipped} need values and will be skipped)` : "");
     runTimer = setTimeout(disarmRun, 5000);
     return;
   }
   disarmRun();
   const calls = [];
   for (let i = 0; i < migrateRows.length; i++) {
-    const r = migrateRows[i];
-    let body = {};
-    if (r.body.value.trim()) {
-      try { body = JSON.parse(r.body.value); } catch (e) { setError(`Call ${i + 1}: the request body is not valid JSON.`, null); return; }
-    }
-    calls.push({ method: r.method, path: r.path.value.trim(), operation_id: r.operation_id, body });
+    try { calls.push(collectCall(migrateRows[i])); } catch (e) { setError(`Call ${i + 1}: ${e.message}.`, null); return; }
   }
   setError("");
   const form = new URLSearchParams({ calls: JSON.stringify(calls) });
@@ -503,13 +552,6 @@ async function plan() {
   invalidateAfter("plan");
   renderPlan(data.plans, data.message);
   show("plan");
-}
-
-async function migrate() {
-  const data = await call("/api/migrate", null, $("migrate-out"), migrate);
-  if (!data) return;
-  renderMigrate(data.calls);
-  show("migrate");
 }
 
 // Restore the last session from the server so a page refresh loses nothing.

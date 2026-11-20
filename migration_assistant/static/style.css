@@ -41,9 +41,15 @@ h1 span { font-weight: 400; color: #b6c9d1; }
 .btn.danger { background: #b4401a; border-color: #b4401a; }
 .btn.danger:hover { background: #983513; border-color: #983513; }
 .btn.confirm, .btn.danger.confirm { background: var(--bad); border-color: var(--bad); }
-.path-edit { width: 100%; min-width: 340px; padding: 5px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); }
-.body-edit { width: 100%; min-width: 240px; padding: 6px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
 td.seq { width: 52px; color: var(--mute); font-variant-numeric: tabular-nums; }
+.op { font-weight: 600; }
+.call { margin-top: 2px; color: var(--mute); font-size: 12px; overflow-wrap: anywhere; }
+.values { display: grid; grid-template-columns: minmax(110px, max-content) minmax(220px, 1fr); gap: 8px 12px; align-items: start; }
+.vlabel { padding-top: 6px; font: 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--ink); overflow-wrap: anywhere; }
+.req { color: var(--bad); font-weight: 700; }
+.value-input { width: 100%; min-width: 0; padding: 6px 9px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); font: 13px ui-monospace, Menlo, Consolas, monospace; }
+textarea.value-input { resize: vertical; font-size: 12px; line-height: 1.45; }
+tr.needs input.value-input:placeholder-shown { border-color: #e0b36a; background: #fffdf8; }
 td.status { min-width: 130px; }
 .status-note { margin-top: 4px; color: var(--mute); font-size: 12px; overflow-wrap: anywhere; max-width: 260px; }
 tr.needs td { background: #fffaf0; }
