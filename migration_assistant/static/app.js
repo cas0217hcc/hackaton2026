@@ -37,16 +37,39 @@ const TYPE_ICONS = {
   "microsoft.documentdb/databaseaccounts": "database", "microsoft.sql/servers": "database",
   "microsoft.servicebus/namespaces": "queue",
 };
+// Official Microsoft Azure service icons (static/azure-icons), keyed by resource type.
+const AZURE_ICONS = {
+  "microsoft.compute/virtualmachines": "virtual-machine", "microsoft.compute/disks": "disks",
+  "microsoft.storage/storageaccounts": "storage-accounts", "microsoft.network/virtualnetworks": "virtual-networks",
+  "microsoft.network/networksecuritygroups": "network-security-groups", "microsoft.network/publicipaddresses": "public-ip-addresses",
+  "microsoft.network/networkinterfaces": "network-interfaces", "microsoft.network/privateendpoints": "private-endpoints",
+  "microsoft.network/privatednszones": "dns-zones", "microsoft.network/privatednszones/virtualnetworklinks": "dns-zones",
+  "microsoft.keyvault/vaults": "key-vaults", "microsoft.eventgrid/systemtopics": "system-topic",
+  "microsoft.web/sites": "app-services", "microsoft.web/serverfarms": "app-service-plans",
+  "microsoft.documentdb/databaseaccounts": "cosmos-db", "microsoft.servicebus/namespaces": "service-bus",
+  "microsoft.sql/servers": "sql-server", "microsoft.managedidentity/userassignedidentities": "managed-identities",
+  "microsoft.containerregistry/registries": "container-registries", "microsoft.operationalinsights/workspaces": "log-analytics-workspaces",
+  "microsoft.insights/components": "application-insights", "microsoft.app/managedenvironments": "container-apps-environments",
+  "microsoft.app/containerapps": "container-apps",
+};
 const resourceTypes = {};
+const resourceKinds = {};
 
-function icon(type) {
-  const name = TYPE_ICONS[(type || "").toLowerCase()] || "cube";
+function icon(type, kind) {
+  const t = (type || "").toLowerCase();
+  const official = t === "microsoft.web/sites" && /functionapp/i.test(kind || "") ? "function-apps" : AZURE_ICONS[t];
+  if (official) {
+    const span = el("span", { class: "ico az" });
+    span.append(el("img", { src: `/static/azure-icons/${official}.svg`, alt: "", width: "24", height: "24" }));
+    return span;
+  }
+  const name = TYPE_ICONS[t] || "cube";
   const span = el("span", { class: "ico" });
   span.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
   return span;
 }
 
-const resCell = (name) => el("span", { class: "res" }, icon(resourceTypes[name]), el("span", { class: "id" }, name));
+const resCell = (name) => el("span", { class: "res" }, icon(resourceTypes[name], resourceKinds[name]), el("span", { class: "id" }, name));
 
 function show(stage) {
   STAGES.forEach((s) => {
@@ -192,6 +215,7 @@ function renderDiscover(resources) {
   const body = [];
   resources.forEach((r, i) => {
     resourceTypes[r.name] = r.type;
+    resourceKinds[r.name] = (r.properties || {}).kind || "";
     const panelId = "config-" + i;
     const toggle = el("button", { type: "button", class: "expander", "aria-expanded": "false", "aria-controls": panelId, "aria-label": `Show configured values of ${r.name}` }, el("span", { class: "chev", "aria-hidden": "true" }));
     const detail = el("tr", { class: "detail", id: panelId, hidden: "" }, el("td", { colspan: "3" }, configPanel(r)));
@@ -200,7 +224,7 @@ function renderDiscover(resources) {
       toggle.setAttribute("aria-expanded", String(open));
       detail.hidden = !open;
     });
-    body.push(el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type), el("span", { class: "id" }, r.name))),
+    body.push(el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type, resourceKinds[r.name]), el("span", { class: "id" }, r.name))),
       el("td", { title: r.type }, typeName(r.type), ...(headline(r) ? [el("div", { class: "headline" }, headline(r))] : [])), el("td", {}, r.location)), detail);
   });
   $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values.`),
@@ -229,7 +253,7 @@ function renderPlan(plans, message) {
   } else {
     out.replaceChildren(...plans.map((p) => {
       const card = el("details", { class: "plan", open: "" },
-        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name]), el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
+        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
       const box = el("div", { class: "plan-body" }, el("p", { class: "summary" }, p.proposal));
       card.append(box);
       if (p.steps.length) {

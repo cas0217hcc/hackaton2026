@@ -26,7 +26,9 @@ body {
 h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 h1 span { font-weight: 400; color: #b6c9d1; }
 .lsw-logo { height: 40px; width: auto; padding: 5px 12px; background: #fff; border-radius: 6px; }
-.top-actions { display: flex; align-items: center; gap: 12px; }
+.top { flex-wrap: wrap; }
+.top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.top-actions .btn, .mode { white-space: nowrap; }
 .btn.ghost { background: transparent; border-color: #3a5767; color: #dbe8ed; padding: 5px 14px; }
 .btn.ghost:hover { background: #1b3a49; border-color: #5b8294; }
 .btn.ghost.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
@@ -100,6 +102,8 @@ td.sub { color: var(--mute); }
 
 /* Icons, source folders */
 .ico { display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--acc-tint); color: var(--acc-dark); }
+.ico.az { background: none; width: 30px; height: 30px; }
+.ico.az img { display: block; }
 .res { display: inline-flex; align-items: center; gap: 10px; }
 .sources { margin-bottom: 20px; padding: 14px 16px; background: var(--canvas); border-radius: 8px; }
 .sources-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
