@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+subscription_id     = "<subscription-guid>"
+resource_group_name = "<resource-group-name>"
+
+# Use an existing resource group (default). Set to true to let Terraform create it.
+create_resource_group = false
+# location            = "westeurope"   # required only when create_resource_group = true
+
+prefix = "products"
+# notify_webhook_url = "https://webhook.site/<your-id>"   # optional: notifier POSTs change events here
+# api_image is set by scripts/deploy.ps1 after the image is built
