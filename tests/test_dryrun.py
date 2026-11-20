@@ -35,7 +35,7 @@ def test_calls_that_take_a_body_have_one():
     from migration_assistant.assess import RULES
     calls = build_calls([a("vnet", "Microsoft.Network/virtualNetworks"), a("nsg", "Microsoft.Network/networkSecurityGroups")])
     bodies = {c.operation_id: c.body for c in calls}
-    assert bodies["post/privateNetworks"] == {"name": "<network-name>"}
+    assert bodies["post/privateNetworks"] == {"name": "vnet"}
     assert bodies["authorizeSecurityGroupFirewallRules"]["rules"][0]["protocol"] == "TCP"
     assert bodies["addToPrivateNetwork"] == {}  # spec: this operation takes no body
 
@@ -190,3 +190,54 @@ def test_run_calls_shares_ids_across_separate_runs():
     attach = DryRunCall("PUT", "/publicCloud/v1/instances/{instanceId}/addToPrivateNetwork", "addToPrivateNetwork", {})
     [res] = run_calls([attach], ex, ids)
     assert res["sent"] is True and res["path"] == "/publicCloud/v1/instances/id-1/addToPrivateNetwork"
+
+
+LAUNCH_CALL = DryRunCall("POST", "/publicCloud/v1/instances", "launchInstance",
+                         {"region": "eu-west-3", "type": "t", "imageId": "i", "contractType": "HOURLY", "rootDiskSize": 50, "rootDiskStorageType": "CENTRAL", "reference": "x"})
+ATTACH_CALL = DryRunCall("PUT", "/publicCloud/v1/instances/{instanceId}/addToPrivateNetwork", "addToPrivateNetwork", {})
+
+
+def test_failed_live_producer_forgets_its_stale_id():
+    # Otherwise a dependent call would act on an instance from an older run.
+    http = FakeHttp(status=500, payload={"errorMessage": "no"})
+    ids = {"instanceId": "old-instance"}
+    results = run_calls([LAUNCH_CALL, ATTACH_CALL], LeasewebExecutor(KEY, http), ids)
+    assert "instanceId" not in ids
+    assert results[1]["skipped"] is True and len(http.calls) == 1
+
+
+def test_dry_run_never_forgets_remembered_ids():
+    ids = {"instanceId": "real-instance"}
+    run_calls([LAUNCH_CALL], DryRunExecutor(), ids)
+    assert ids == {"instanceId": "real-instance"}
+
+
+def test_calls_name_their_azure_resource():
+    calls = build_calls([a("sthack", "Microsoft.Storage/storageAccounts"), a("vm-web-01", "Microsoft.Compute/virtualMachines")])
+    assert {c.operation_id: c.source for c in calls} == {"createObjectStorageBucket": "sthack", "launchInstance": "vm-web-01"}
+
+
+def test_names_are_prefilled_from_the_azure_resource_names():
+    calls = build_calls([a("sthack", "Microsoft.Storage/storageAccounts"), a("vm-web-01", "Microsoft.Compute/virtualMachines"),
+                         a("nsg-web", "Microsoft.Network/networkSecurityGroups"), a("vnet-hack", "Microsoft.Network/virtualNetworks")])
+    body = {c.operation_id: c.body for c in calls}
+    assert body["createObjectStorageBucket"]["name"] == "sthack"
+    assert body["launchInstance"]["reference"] == "vm-web-01"
+    assert body["createSecurityGroup"]["name"] == "nsg-web"
+    assert body["post/privateNetworks"]["name"] == "vnet-hack"
+    assert all(unresolved(DryRunCall(c.method, "/x", c.operation_id, c.body)) == [] for c in calls)
+
+
+def test_region_and_disk_size_come_from_the_azure_vm():
+    from migration_assistant.models import Resource
+    vm = Resource("/x/vm", "vm-web-01", "Microsoft.Compute/virtualMachines", "germanywestcentral",
+                  {"properties": {"storageProfile": {"osDisk": {"diskSizeGB": 64}}}})
+    [launch] = build_calls([a("vm-web-01", "Microsoft.Compute/virtualMachines")], resources=[vm])
+    assert launch.body["region"] == "eu-central-1" and launch.body["rootDiskSize"] == 64
+
+
+def test_unknown_azure_location_keeps_the_default_region():
+    from migration_assistant.models import Resource
+    vm = Resource("/x/vm", "vm", "Microsoft.Compute/virtualMachines", "brazilsouth", {})
+    [launch] = build_calls([a("vm", "Microsoft.Compute/virtualMachines")], resources=[vm])
+    assert launch.body["region"] == "eu-west-3" and launch.body["rootDiskSize"] == 50

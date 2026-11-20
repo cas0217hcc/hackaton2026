@@ -375,3 +375,23 @@ def test_state_endpoint_exposes_remembered_ids():
     c.post("/api/key", data={"api_key": KEY})
     run_one(c, LAUNCH)
     assert c.get("/api/state").json()["chain"] == {"instanceId": "id-1"}
+
+
+def test_full_run_uses_ids_remembered_from_single_runs():
+    import json as _json
+    c, http = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    run_one(c, LAUNCH)
+    r = c.post("/api/migrate", data={"calls": _json.dumps([ATTACH])}).json()
+    assert r["results"][0]["sent"] is True
+    assert http.calls[1][1].endswith("/instances/id-1/addToPrivateNetwork")
+
+
+def test_calls_carry_their_azure_resource_through_the_api():
+    import json as _json
+    c, _ = live_client()
+    run_to_assess(c)
+    prepared = c.get("/api/migrate/calls").json()["calls"]
+    assert prepared[0]["source"] == "vm-web-01"
+    r = c.post("/api/migrate", data={"calls": _json.dumps([{**good_call(), "source": "sthack"}])}).json()
+    assert r["calls"][0]["source"] == "sthack"

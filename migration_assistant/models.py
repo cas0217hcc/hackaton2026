@@ -45,3 +45,5 @@ class DryRunCall:
     body: dict = field(default_factory=dict)
     # path param -> operation whose response supplies it (filled in when the migration runs)
     chained: dict = field(default_factory=dict)
+    # name of the Azure resource this call migrates
+    source: str = ""

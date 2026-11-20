@@ -189,7 +189,8 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     def api_migrate_calls():
         if not state["assessments"]:
             return error("Run Assess first.", 409)
-        return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops)], "live": bool(secrets["api_key"])}
+        return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops, state["resources"])],
+                "live": bool(secrets["api_key"])}
 
     @app.get("/api/migrate/options")
     def api_migrate_options():
@@ -217,7 +218,8 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         return None
 
     def to_calls(raw: list) -> list[DryRunCall]:
-        return [DryRunCall(c["method"], c["path"], c["operation_id"], dict(c.get("body") or {})) for c in raw]
+        return [DryRunCall(c["method"], c["path"], c["operation_id"], dict(c.get("body") or {}), source=str(c.get("source") or ""))
+                for c in raw]
 
     @app.post("/api/migrate")
     def api_migrate(calls: str = Form("")):
@@ -232,12 +234,11 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
             if problem:
                 return error(problem, 400)
         else:
-            prepared = build_calls(state["assessments"], ops)
+            prepared = build_calls(state["assessments"], ops, state["resources"])
         annotate_chain(prepared)
         state["calls"] = prepared
         save()
-        chain.clear()  # a full run starts from a clean slate and repopulates the ids
-        results = run_calls(prepared, executor(), chain)
+        results = run_calls(prepared, executor(), chain)  # ids from earlier single runs stay usable
         return {"live": bool(secrets["api_key"]), "calls": [asdict(c) for c in prepared], "results": results,
                 "chain": dict(chain)}
 

@@ -4,7 +4,7 @@ from typing import Any, Protocol
 import httpx
 
 from .leaseweb_ops import load_operations
-from .models import Assessment, DryRunCall
+from .models import Assessment, DryRunCall, Resource
 
 # Placeholder request values until a real Leaseweb account and API key exist.
 PLACEHOLDER_BODIES = {
@@ -32,16 +32,51 @@ def annotate_chain(calls: list[DryRunCall]) -> list[DryRunCall]:
     return calls
 
 
-def build_calls(assessments: list[Assessment], ops: dict | None = None) -> list[DryRunCall]:
+# Azure location -> nearest Leaseweb Public Cloud region. Unknown locations keep the default region.
+REGION_BY_AZURE_LOCATION = {
+    "westeurope": "eu-west-3",            # Netherlands -> Amsterdam
+    "germanywestcentral": "eu-central-1",  # Frankfurt
+    "uksouth": "eu-west-2", "ukwest": "eu-west-2", "northeurope": "eu-west-2",  # London
+    "eastus": "us-east-1", "eastus2": "us-east-1",  # Virginia -> Washington
+    "westus": "us-west-1", "westus2": "us-west-1",  # San Francisco
+    "southeastasia": "ap-southeast-1",    # Singapore
+    "canadacentral": "ca-central-1", "canadaeast": "ca-central-1",  # Montreal
+    "japaneast": "ap-northeast-1",
+}
+
+
+def _prefill(op: str, body: dict, name: str, resource: Resource | None) -> None:
+    """Fill what Discover already knows, so the user does not retype it: names, region, disk size."""
+    for key, value in body.items():
+        if isinstance(value, str) and value.startswith("<") and value.endswith("-name>"):
+            body[key] = name
+    if op != "launchInstance" or resource is None:
+        return
+    region = REGION_BY_AZURE_LOCATION.get((resource.location or "").lower())
+    if region:
+        body["region"] = region
+    try:
+        size = resource.properties["properties"]["storageProfile"]["osDisk"]["diskSizeGB"]
+    except (KeyError, TypeError):
+        size = None
+    if isinstance(size, int) and 5 <= size <= 1000:  # the range the Leaseweb spec allows
+        body["rootDiskSize"] = size
+
+
+def build_calls(assessments: list[Assessment], ops: dict | None = None,
+                resources: list[Resource] | None = None) -> list[DryRunCall]:
     """One DryRunCall per Leaseweb operation of each Direct resource, producers first."""
     ops = ops if ops is not None else load_operations()
+    by_name = {r.name: r for r in resources or []}
     calls = []
     for a in assessments:
         if a.route != "direct":
             continue
         for op in a.lw_operations:
             method, path = ops[op]
-            calls.append(DryRunCall(method, path, op, dict(PLACEHOLDER_BODIES.get(op, {}))))
+            body = dict(PLACEHOLDER_BODIES.get(op, {}))
+            _prefill(op, body, a.resource_name, by_name.get(a.resource_name))
+            calls.append(DryRunCall(method, path, op, body, source=a.resource_name))
     order = list(PRODUCES)
     calls.sort(key=lambda c: order.index(c.operation_id) if c.operation_id in order else len(order))
     return annotate_chain(calls)
@@ -129,14 +164,19 @@ def run_calls(calls: list[DryRunCall], executor: Executor, ids: dict[str, str] |
         path = c.path
         for param, value in ids.items():
             path = path.replace("{" + param + "}", value)
-        result = executor.execute(DryRunCall(c.method, path, c.operation_id, c.body, c.chained))
+        result = executor.execute(DryRunCall(c.method, path, c.operation_id, c.body, c.chained, c.source))
         if result.get("skipped"):
             for param, producer in c.chained.items():
                 if "{" + param + "}" in path:
                     result["reason"] += f" ({param} comes from {producer}, which has not succeeded yet)"
         resp = result.get("response")
-        if (result.get("sent") and 200 <= result.get("status", 0) < 300 and isinstance(resp, dict)
-                and c.operation_id in PRODUCES and _SAFE_ID.fullmatch(str(resp.get("id", "")))):
-            ids[PRODUCES[c.operation_id]] = str(resp["id"])
+        if c.operation_id in PRODUCES and not result.get("dry_run"):
+            if (result.get("sent") and 200 <= result.get("status", 0) < 300 and isinstance(resp, dict)
+                    and _SAFE_ID.fullmatch(str(resp.get("id", "")))):
+                ids[PRODUCES[c.operation_id]] = str(resp["id"])
+            else:
+                # A producer that did not succeed now must not leave an id from an older run behind:
+                # its dependents would act on the wrong resource.
+                ids.pop(PRODUCES[c.operation_id], None)
         results.append(result)
     return results
