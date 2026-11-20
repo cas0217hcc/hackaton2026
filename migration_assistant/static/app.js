@@ -15,7 +15,9 @@ function el(tag, attrs = {}, ...kids) {
 function show(stage) {
   STAGES.forEach((s) => {
     $("stage-" + s).hidden = s !== stage;
-    document.querySelector(`[data-stage="${s}"]`).classList.toggle("on", s === stage);
+    const b = document.querySelector(`[data-stage="${s}"]`);
+    b.classList.toggle("on", s === stage);
+    b.classList.toggle("done", !!done[s]);
   });
   const i = STAGES.indexOf(stage);
   const next = $("next");
@@ -108,15 +110,21 @@ function diffBlock(text) {
 }
 
 function renderDiscover(resources) {
-  $("discover-out").replaceChildren(table(["Resource", "Type", "Location"], resources.map((r) =>
+  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found.`), table(["Resource", "Type", "Location"], resources.map((r) =>
     el("tr", {}, el("td", { class: "id" }, r.name), el("td", { title: r.type }, typeName(r.type)), el("td", {}, r.location)))));
   done.discover = true;
   setLocked("assess", false);
 }
 
 function renderAssess(assessments) {
-  $("assess-out").replaceChildren(table(["Resource", "Leaseweb target", "Route", "Why"], assessments.map((a) =>
-    el("tr", {}, el("td", { class: "id" }, a.resource_name), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", {}, a.rationale)))));
+  const stat = (route) => {
+    const n = assessments.filter((a) => a.route === route).length;
+    return el("span", { class: "stat " + route }, el("b", {}, String(n)), LABELS[route]);
+  };
+  $("assess-out").replaceChildren(
+    el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included")),
+    table(["Resource", "Leaseweb target", "Route", "Why"], assessments.map((a) =>
+      el("tr", {}, el("td", { class: "id" }, a.resource_name), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale)))));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -127,9 +135,10 @@ function renderPlan(plans, message) {
     out.replaceChildren(el("p", { class: "empty" }, message));
   } else {
     out.replaceChildren(...plans.map((p) => {
-      const box = el("div", { class: "plan" },
-        el("div", { class: "plan-head" }, el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild")),
-        el("p", { class: "summary" }, p.proposal));
+      const card = el("div", { class: "plan" },
+        el("div", { class: "plan-head" }, el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild")));
+      const box = el("div", { class: "plan-body" }, el("p", { class: "summary" }, p.proposal));
+      card.append(box);
       if (p.steps.length) {
         box.append(el("h4", {}, "Migration steps"), el("ol", { class: "steps-list" }, ...p.steps.map((t) => el("li", {}, t))));
       }
@@ -140,7 +149,7 @@ function renderPlan(plans, message) {
         box.append(el("details", { class: "change", open: "" }, el("summary", {}, el("span", { class: "id" }, c.file), " - " + c.summary), diffBlock(c.diff)));
       });
       p.warnings.forEach((w) => box.append(el("p", { class: "warning" }, w)));
-      return box;
+      return card;
     }));
   }
   done.plan = true;
@@ -153,7 +162,6 @@ function renderMigrate(calls) {
     out.replaceChildren(el("p", { class: "empty" }, "No directly migratable resources."));
   } else {
     out.replaceChildren(
-      el("p", { class: "note" }, "Dry run: these calls were not sent."),
       table(["Method", "Path", "Operation", "Request body"], calls.map((c) => {
         const hasBody = Object.keys(c.body).length > 0;
         return el("tr", {}, el("td", { class: "code" }, c.method), el("td", { class: "code" }, c.path),
