@@ -1,5 +1,7 @@
 import json
 import threading
+
+import httpx
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Callable
@@ -13,9 +15,9 @@ from starlette.requests import Request
 from .assess import assess
 from .azure_discovery import DiscoveryError, list_resources
 from .claude_cli import ClaudeError, ask_json
-from .dryrun import DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
+from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
-from .leaseweb_ops import load_operations
+from .leaseweb_ops import load_launch_options, load_operations
 from .plan import FAILED_PREFIX, build_plans, read_sources
 
 HERE = Path(__file__).parent
@@ -64,6 +66,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     progress_lock = threading.Lock()
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     ops = load_operations()
+    launch_options = load_launch_options()
 
     def save() -> None:
         if state_file is None:
@@ -185,6 +188,23 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         if not state["assessments"]:
             return error("Run Assess first.", 409)
         return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops)], "live": bool(secrets["api_key"])}
+
+    @app.get("/api/migrate/options")
+    def api_migrate_options():
+        """Dropdown values for call fields. Regions come live from Leaseweb when a key is set, else from the specs."""
+        regions, source = launch_options["region"], "spec"
+        key = secrets["api_key"]
+        if key:
+            try:
+                client = http if http is not None else httpx.Client()
+                resp = client.request("GET", BASE_URL + "/publicCloud/v1/regions",
+                                      headers={"X-LSW-Auth": key, "Accept": "application/json"}, timeout=15)
+                live = [{"value": r["name"], "description": r.get("location", "")} for r in resp.json()["regions"]]
+                if resp.status_code == 200 and live:
+                    regions, source = live, "live"
+            except Exception:  # any lookup problem: keep the spec list
+                pass
+        return {"options": {"launchInstance": {**launch_options, "region": regions}}, "source": source}
 
     @app.post("/api/migrate")
     def api_migrate(calls: str = Form("")):

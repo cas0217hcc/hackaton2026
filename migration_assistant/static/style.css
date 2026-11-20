@@ -48,6 +48,7 @@ td.seq { width: 52px; color: var(--mute); font-variant-numeric: tabular-nums; }
 .vlabel { padding-top: 6px; font: 12.5px ui-monospace, Menlo, Consolas, monospace; color: var(--ink); overflow-wrap: anywhere; }
 .req { color: var(--bad); font-weight: 700; }
 .value-input { width: 100%; min-width: 0; padding: 6px 9px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); font: 13px ui-monospace, Menlo, Consolas, monospace; }
+select.value-input { padding: 6px 7px; cursor: pointer; }
 textarea.value-input { resize: vertical; font-size: 12px; line-height: 1.45; }
 tr.needs input.value-input:placeholder-shown { border-color: #e0b36a; background: #fffdf8; }
 td.status { min-width: 130px; }

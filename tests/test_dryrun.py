@@ -163,3 +163,17 @@ def test_run_calls_with_dry_run_executor_sends_nothing_and_keeps_all_calls():
     results = run_calls(build_calls(full_flow_assessments()), DryRunExecutor())
     assert len(results) == len(build_calls(full_flow_assessments()))
     assert all(r["sent"] is False and r["dry_run"] is True for r in results)
+
+
+def test_placeholder_bodies_match_the_spec_request_schemas():
+    import yaml
+    from pathlib import Path
+    from migration_assistant.dryrun import PLACEHOLDER_BODIES
+    schemas = {"launchInstance": "publicCloud/components/schemas/launchInstanceOpts.yaml",
+               "createObjectStorageBucket": "objectStorage/components/schemas/createObjectStorageBucketOpts.yaml",
+               "createSecurityGroup": "publicCloud/components/schemas/createSecurityGroupOpts.yaml"}
+    for op, rel in schemas.items():
+        spec = yaml.safe_load((Path("leaseweb-api") / rel).read_text())
+        body = PLACEHOLDER_BODIES[op]
+        assert set(body) <= set(spec["properties"]), f"{op}: unknown fields {set(body) - set(spec['properties'])}"
+        assert set(spec.get("required", [])) <= set(body), f"{op}: missing {set(spec.get('required', [])) - set(body)}"

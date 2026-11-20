@@ -280,3 +280,30 @@ def test_plan_with_one_failed_resource_still_returns_the_others():
     assert r.status_code == 200
     plans = {p["resource_name"]: p for p in r.json()["plans"]}
     assert plans["kv-hack"]["proposal"] and plans["kv-two"]["warnings"][0].startswith("Plan failed")
+
+
+def test_options_endpoint_serves_spec_regions_without_a_key():
+    c, _ = live_client()
+    r = c.get("/api/migrate/options").json()
+    assert r["source"] == "spec"
+    regions = {x["value"]: x["description"] for x in r["options"]["launchInstance"]["region"]}
+    assert regions["eu-west-3"] == "Amsterdam"
+    assert "HOURLY" in [x["value"] for x in r["options"]["launchInstance"]["contractType"]]
+
+
+def test_options_endpoint_uses_live_regions_when_a_key_is_set():
+    http = FakeHttp(status=200, payload={"regions": [{"name": "eu-west-3", "location": "Amsterdam (live)"}, {"name": "xx-new-1", "location": "Newtown"}]})
+    c, _ = live_client(http=http)
+    c.post("/api/key", data={"api_key": KEY})
+    r = c.get("/api/migrate/options").json()
+    assert r["source"] == "live"
+    assert {x["value"]: x["description"] for x in r["options"]["launchInstance"]["region"]} == {"eu-west-3": "Amsterdam (live)", "xx-new-1": "Newtown"}
+    assert http.calls[0][1].endswith("/publicCloud/v1/regions") and http.calls[0][2]["headers"]["X-LSW-Auth"] == KEY
+    assert KEY not in str(r)
+
+
+def test_options_endpoint_falls_back_to_spec_when_live_lookup_fails():
+    c, _ = live_client(http=FakeHttp(exc=RuntimeError("down")))
+    c.post("/api/key", data={"api_key": KEY})
+    r = c.get("/api/migrate/options").json()
+    assert r["source"] == "spec" and r["options"]["launchInstance"]["region"]

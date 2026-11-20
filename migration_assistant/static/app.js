@@ -306,6 +306,15 @@ function refreshMode() {
 
 const PLACEHOLDER = /<([^<>]+)>/;
 
+// Allowed values (with descriptions) for fields that are a fixed list in the Leaseweb specs.
+let optionsCache = null;
+async function ensureOptions() {
+  if (!optionsCache) {
+    try { optionsCache = await (await fetch("/api/migrate/options")).json(); } catch (e) { optionsCache = { options: {}, source: "spec" }; }
+  }
+  return optionsCache;
+}
+
 // One labelled input per value a call takes. Required = still a <placeholder> or an unfilled {path param}
 // (params an earlier response fills in, "chained", are not asked for).
 function buildFields(c, idPrefix) {
@@ -315,8 +324,14 @@ function buildFields(c, idPrefix) {
     const key = token.slice(1, -1);
     if (!(key in chained)) fields.push({ where: "path", key, token, required: true, kind: "string", initial: "", hint: "required" });
   });
+  const listed = ((optionsCache && optionsCache.options) || {})[c.operation_id] || {};
   Object.entries(c.body || {}).forEach(([key, v]) => {
-    if (typeof v === "string") {
+    if (typeof v === "string" && listed[key] && !PLACEHOLDER.test(v)) {
+      const choices = listed[key].some((o) => o.value === v) ? listed[key] : [{ value: v, description: "" }, ...listed[key]];
+      fields.push({ where: "body", key, required: false, kind: "select", initial: v, choices, hint: "" });
+    } else if (typeof v === "boolean") {
+      fields.push({ where: "body", key, required: false, kind: "bool", initial: String(v), choices: [{ value: "true", description: "" }, { value: "false", description: "" }], hint: "" });
+    } else if (typeof v === "string") {
       const ph = PLACEHOLDER.test(v);
       fields.push({ where: "body", key, required: ph, kind: "string", initial: ph ? "" : v, hint: ph ? v.match(PLACEHOLDER)[1] : "", original: v });
     } else if (typeof v === "number") {
@@ -328,7 +343,11 @@ function buildFields(c, idPrefix) {
   });
   fields.forEach((f) => {
     const attrs = { id: `${idPrefix}-${f.key}`, spellcheck: "false", autocomplete: "off", class: "value-input" };
-    f.input = f.kind === "json" ? el("textarea", { ...attrs, rows: "4" }) : el("input", { ...attrs, placeholder: f.hint });
+    if (f.kind === "select" || f.kind === "bool") {
+      f.input = el("select", attrs, ...f.choices.map((o) => el("option", { value: o.value }, o.description ? `${o.value} - ${o.description}` : o.value)));
+    } else {
+      f.input = f.kind === "json" ? el("textarea", { ...attrs, rows: "4" }) : el("input", { ...attrs, placeholder: f.hint });
+    }
     f.input.value = f.initial;
   });
   return fields;
@@ -344,7 +363,11 @@ function collectCall(row) {
   for (const f of row.fields) {
     const v = f.input.value.trim();
     if (f.where === "path") { if (v) path = path.replace(f.token, encodeURIComponent(v)); continue; }
-    if (f.kind === "json") {
+    if (f.kind === "select") {
+      body[f.key] = f.input.value;
+    } else if (f.kind === "bool") {
+      body[f.key] = f.input.value === "true";
+    } else if (f.kind === "json") {
       try { body[f.key] = JSON.parse(f.input.value); } catch (e) { throw new Error(`${f.key} is not valid JSON`); }
     } else if (f.kind === "number") {
       body[f.key] = v !== "" && !isNaN(Number(v)) ? Number(v) : v;
@@ -387,7 +410,7 @@ function renderMigrate(calls) {
       el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`)),
       el("td", {}, values), status);
     const row = { tr, status, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false };
-    fields.forEach((f) => f.input.addEventListener("input", () => { row.ran = false; updateRowStatus(row); }));
+    fields.forEach((f) => ["input", "change"].forEach((ev) => f.input.addEventListener(ev, () => { row.ran = false; updateRowStatus(row); })));
     migrateRows.push(row);
     updateRowStatus(row);
     return tr;
@@ -416,6 +439,7 @@ function showResults(results) {
 async function prepareMigrate() {
   const data = await call("/api/migrate/calls", null, $("migrate-out"), prepareMigrate, "GET");
   if (!data) return;
+  await ensureOptions();
   live = data.live;
   renderMigrate(data.calls);
   refreshMode();
@@ -471,6 +495,7 @@ async function setKey(e) {
   } catch (err) { setError("Could not save the API key.", null); return; }
   setError("");
   live = true;
+  optionsCache = null;  // regions come live from Leaseweb once a key is set
   $("keybar").hidden = true;
   $("key-btn").setAttribute("aria-expanded", "false");
   refreshMode();
@@ -479,6 +504,7 @@ async function setKey(e) {
 async function removeKey() {
   try { await fetch("/api/key", { method: "DELETE" }); } catch (err) { setError("Could not remove the API key.", null); return; }
   live = false;
+  optionsCache = null;
   refreshMode();
 }
 
@@ -577,7 +603,7 @@ async function restore() {
   if (s.resources.length) { renderDiscover(s.resources); furthest = "discover"; }
   if (s.assessments.length) { renderAssess(s.assessments); furthest = "assess"; }
   if (s.plans.length || s.calls.length) { renderPlan(s.plans, "Nothing to plan: every resource migrates directly."); furthest = "plan"; }
-  if (s.calls.length) { renderMigrate(s.calls); done.migrate = true; furthest = "migrate"; }
+  if (s.calls.length) { await ensureOptions(); renderMigrate(s.calls); done.migrate = true; furthest = "migrate"; }
   if (furthest) {
     $("restored").hidden = false;
     show(furthest);

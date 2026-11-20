@@ -8,8 +8,8 @@ from .models import Assessment, DryRunCall
 
 # Placeholder request values until a real Leaseweb account and API key exist.
 PLACEHOLDER_BODIES = {
-    "launchInstance": {"regionName": "eu-west-3", "typeName": "lsw.c3.large", "imageId": "UBUNTU_22_04_64BIT", "rootDiskSize": 50},
-    "createObjectStorageBucket": {"name": "<bucket-name>", "region": "nl-01"},
+    "launchInstance": {"region": "eu-west-3", "type": "lsw.c3.large", "imageId": "UBUNTU_22_04_64BIT", "contractType": "HOURLY", "rootDiskSize": 50, "rootDiskStorageType": "CENTRAL", "reference": "<instance-name>"},
+    "createObjectStorageBucket": {"name": "<bucket-name>", "isVersioningEnabled": False},
     "createSecurityGroup": {"name": "<security-group-name>"},
     "post/privateNetworks": {"name": "<network-name>"},
     "authorizeSecurityGroupFirewallRules": {"rules": [{"protocol": "TCP", "startPort": 443, "endPort": 443, "source": "0.0.0.0/0"}]},
