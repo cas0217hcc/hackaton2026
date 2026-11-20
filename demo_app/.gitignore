@@ -1,0 +1,11 @@
+terraform.tfvars
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+__pycache__/
+.venv/
+local.settings.json
+*.tfplan
+node_modules/
+dist/
