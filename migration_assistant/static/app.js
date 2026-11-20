@@ -792,6 +792,12 @@ const AI_HELP = {
 let aiState = null;
 const modelLists = {};  // provider -> {models, source, error}, filled on first use
 
+// What the header shows: the provider and the model it will use right now.
+function aiModelText(s) {
+  if (s.effective_model) return s.effective_model;
+  return s.provider === "opencode" ? "opencode's default model" : "default model";
+}
+
 function aiLabel(s) { return (s.providers.find((p) => p.id === s.provider) || {}).label || s.provider; }
 
 function renderAi(s) {
@@ -799,7 +805,8 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-btn").textContent = "AI: " + aiLabel(s);
+  $("ai-btn").textContent = `AI: ${aiLabel(s)} · ${aiModelText(s)}`;
+  $("ai-btn").title = "Change the AI provider and model";
   syncAiForm(s.provider);
   $("ai-key-remove").hidden = !s.api_key_set;
   $("ai-key").placeholder = s.api_key_set ? "Key is set. Paste a new one to replace it." : "Paste your Anthropic API key";

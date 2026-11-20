@@ -18,7 +18,7 @@ from .assess import assess
 from .azure_discovery import DiscoveryError, list_resource_groups, list_resources
 from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
-from .llm import AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
+from .llm import DEFAULT_API_MODEL, AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
 from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
@@ -70,7 +70,16 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     progress: dict = {"running": False, "items": []}  # live status of the current plan run
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
-    ai = AiSettings(provider=os.environ.get("AI_PROVIDER", "claude-cli"), model=os.environ.get("AI_MODEL", ""))  # memory only
+    ai = AiSettings(provider=os.environ.get("AI_PROVIDER", "claude-cli"), model=os.environ.get("AI_MODEL", ""))
+    # The provider and model are remembered next to the saved results; the API key never is.
+    ai_file = state_file.parent / "ai.json" if state_file is not None else None
+    if ai_file is not None and ai_file.exists():
+        try:
+            saved = json.loads(ai_file.read_text())
+            if saved["provider"] in {p["id"] for p in available_providers(ai)} and isinstance(saved.get("model", ""), str):
+                ai.provider, ai.model = saved["provider"], saved.get("model", "")
+        except (ValueError, KeyError, TypeError, OSError):
+            pass  # a damaged file just means the default
 
     def ask_ai(prompt: str) -> dict:
         """Answer with whichever provider is selected right now (tests can pass a fixed `ask`)."""
@@ -231,7 +240,8 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                 "live": bool(secrets["api_key"])}
 
     def ai_state() -> dict:
-        return {"provider": ai.provider, "model": ai.model, "api_key_set": bool(ai.api_key),
+        effective = ai.model or (DEFAULT_API_MODEL if ai.provider == "anthropic-api" else "")
+        return {"provider": ai.provider, "model": ai.model, "effective_model": effective, "api_key_set": bool(ai.api_key),
                 "providers": available_providers(ai)}
 
     @app.get("/api/ai")
@@ -248,6 +258,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if provider == "claude-cli" and model and not MODEL_RE.fullmatch(model):
             return error("Claude Code model must be opus, sonnet, haiku or a claude-... model id.", 400)
         ai.provider, ai.model = provider, model
+        if ai_file is not None:
+            ai_file.parent.mkdir(parents=True, exist_ok=True)
+            ai_file.write_text(json.dumps({"provider": ai.provider, "model": ai.model}))
         if api_key.strip():  # an empty field keeps the key that is already set
             ai.api_key = api_key.strip()
         return ai_state()
