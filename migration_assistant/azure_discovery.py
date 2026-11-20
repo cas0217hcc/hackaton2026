@@ -55,3 +55,16 @@ def list_resources(resource_group: str, runner: Callable = subprocess.run) -> li
                  _redact({k: v for k, v in {**i, **d}.items() if k not in HEADER_KEYS}))
         for i, d in zip(items, details)
     ]
+
+
+def list_resource_groups(runner: Callable = subprocess.run) -> list[dict]:
+    """Resource groups the az login can see, sorted by name (case-insensitive). Read-only."""
+    try:
+        proc = runner(["az", "group", "list", "--query", "[].{name:name,location:location}", "-o", "json"],
+                      capture_output=True, text=True)
+    except FileNotFoundError:
+        raise DiscoveryError("az CLI not found on PATH") from None
+    if proc.returncode != 0:
+        raise DiscoveryError(proc.stderr.strip() or "az group list failed")
+    groups = json.loads(proc.stdout or "[]")
+    return sorted(({"name": g["name"], "location": g.get("location", "")} for g in groups), key=lambda g: g["name"].lower())

@@ -88,7 +88,8 @@ def build_plan(
         f"Proposed target: {assessment.target}. Reason: {assessment.rationale}\n"
         f"Propose the Leaseweb infrastructure replacement, using ONLY these Leaseweb operationIds: "
         f"{', '.join(sorted(ops))}.\n"
-        f"Then list the application code changes needed, as unified diffs, for this Python source:\n{code}\n"
+        f"Then list the application code changes needed, as unified diffs, for this Python source. "
+        f"Only list files that need a change; leave out files that need none.\n{code}\n"
         'Keep "proposal" to 1-2 sentences and put the migration procedure in "steps", one short action per item. '
         'Reply JSON: {"proposal": str, "steps": [str], "lw_operations": [str], "code_changes": '
         '[{"file": str, "summary": str, "diff": str}]}'

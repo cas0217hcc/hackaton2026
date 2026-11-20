@@ -34,7 +34,7 @@
     <button class="btn" type="submit">Save key</button>
     <button class="btn secondary" type="button" id="key-remove" hidden>Remove key</button>
   </form>
-  <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Migrate sends real calls to Leaseweb instead of a dry run.</p>
+  <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Automatic migration sends real calls to Leaseweb instead of a dry run.</p>
 </div>
 
 <div class="keybar" id="aibar" hidden>
@@ -62,7 +62,7 @@
   </form>
 </div>
 <div class="liveband" id="liveband" role="status" hidden>
-  <span><b>LIVE mode.</b> Calls you run on the Migrate screen are sent to Leaseweb and can create billable resources.</span>
+  <span><b>LIVE mode.</b> Calls you run in Automatic migration are sent to Leaseweb and can create billable resources.</span>
   <button class="btn ghost" id="live-off" type="button">Remove key and return to dry run</button>
 </div>
 <div id="top-confirm"></div>
@@ -75,8 +75,8 @@
 <nav class="steps" aria-label="Stages">
   <button class="step on" data-stage="discover"><span class="num">1</span>Discover</button>
   <button class="step" data-stage="assess" disabled><span class="num">2</span>Assess</button>
-  <button class="step" data-stage="plan" disabled><span class="num">3</span>Plan</button>
-  <button class="step" data-stage="migrate" disabled><span class="num">4</span>Migrate</button>
+  <button class="step" data-stage="plan" disabled><span class="num">3</span>Manual migration</button>
+  <button class="step" data-stage="migrate" disabled><span class="num">4</span>Automatic migration</button>
 </nav>
 
 <main>
@@ -94,10 +94,12 @@
       </div>
       <form id="discover-form" class="row">
         <label for="rg">Resource group</label>
-        <input id="rg" name="resource_group" value="{{ default_rg }}" autocomplete="off">
+        <select id="rg" name="resource_group" data-default="{{ default_rg }}"><option value="{{ default_rg }}" selected>{{ default_rg }}</option></select>
+        <input id="rg-typed" name="resource_group_typed" placeholder="Resource group name" autocomplete="off" spellcheck="false" hidden>
+        <button class="btn secondary" type="button" id="rg-refresh" title="Reload the list from Azure">Refresh list</button>
         <button class="btn" type="submit">Discover resources</button>
       </form>
-      <div id="discover-out"><p class="empty">No resources loaded yet. Enter a resource group and discover it.</p></div>
+      <div id="discover-out"><p class="empty">No resources loaded yet. Pick a resource group and discover it.</p></div>
     </section>
 
     <section id="stage-assess" class="stage" hidden>
@@ -111,8 +113,8 @@
 
     <section id="stage-plan" class="stage" hidden>
       <div class="stage-head">
-        <h2>Plan the rebuilds</h2>
-        <p>Proposed Leaseweb infrastructure for resources with no direct equivalent, plus the code changes they need.</p>
+        <h2>Manual migration</h2>
+        <p>Resources with no direct Leaseweb equivalent have to be rebuilt by hand. Here is the proposed Leaseweb setup for each, plus the code changes it needs.</p>
       </div>
       <form id="plan-form" class="sources">
         <div class="sources-head">
@@ -130,7 +132,7 @@
 
     <section id="stage-migrate" class="stage" hidden>
       <div class="stage-head">
-        <h2 id="migrate-title">Dry-run migration</h2>
+        <h2 id="migrate-title">Automatic migration (dry run)</h2>
         <p id="migrate-desc">The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.</p>
       </div>
       <div class="row"><button class="btn" id="migrate-btn">Run dry-run migration</button></div>
@@ -144,7 +146,7 @@
     </footer>
   </div>
 </main>
-<dialog id="diff-dialog" aria-labelledby="diff-title">
+<dialog id="diff-dialog" class="dlg" aria-labelledby="diff-title">
   <div class="diff-head">
     <div class="diff-titles">
       <h2 id="diff-title" class="id"></h2>
@@ -153,13 +155,24 @@
     <div class="diff-tools">
       <span class="diff-stats" id="diff-stats"></span>
       <div class="seg" role="group" aria-label="Diff layout">
-        <button type="button" id="diff-inline" aria-pressed="true">Inline</button>
-        <button type="button" id="diff-side" aria-pressed="false">Side by side</button>
+        <button type="button" id="diff-side" aria-pressed="true">Side by side</button>
+        <button type="button" id="diff-inline" aria-pressed="false">Inline</button>
       </div>
       <button type="button" class="btn secondary" id="diff-close">Close</button>
     </div>
   </div>
   <div class="diff-body" id="diff-body" tabindex="0"></div>
+</dialog>
+<dialog id="detail-dialog" class="dlg" aria-labelledby="detail-title">
+  <div class="diff-head">
+    <div class="diff-titles">
+      <p class="detail-type" id="detail-type"></p>
+      <h2 id="detail-title" class="id"></h2>
+      <p id="detail-summary"></p>
+    </div>
+    <div class="diff-tools"><button type="button" class="btn secondary" id="detail-close">Close</button></div>
+  </div>
+  <div class="detail-body" id="detail-body" tabindex="0"></div>
 </dialog>
 <script src="/static/diff.js?v={{ v }}"></script>
 <script src="/static/app.js?v={{ v }}"></script>

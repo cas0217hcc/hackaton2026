@@ -122,3 +122,13 @@ def test_build_plans_reports_progress_for_every_resource():
     build_plans(items(3), {}, ask=slow_ask, workers=3, on_progress=lambda name, status: events.append((name, status)))
     for name in ("r0", "r1", "r2"):
         assert (name, "running") in events and (name, "done") in events
+
+
+def test_prompt_tells_the_ai_to_list_only_files_that_change():
+    seen = []
+
+    def ask(prompt):
+        seen.append(prompt)
+        return {"proposal": "x", "lw_operations": [], "code_changes": []}
+    build_plan(KV, KV_RES, {"a.py": "x"}, ask=ask, ops={})
+    assert "Only list files that need a change" in seen[0]

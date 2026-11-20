@@ -15,13 +15,13 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from .assess import assess
-from .azure_discovery import DiscoveryError, list_resources
+from .azure_discovery import DiscoveryError, list_resource_groups, list_resources
 from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
 from .llm import AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
 from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
-from .leaseweb_ops import load_launch_options, load_operations
+from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
 from .plan import FAILED_PREFIX, build_plans, read_sources
 
 HERE = Path(__file__).parent
@@ -62,7 +62,7 @@ def _load(path: Path | None) -> dict:
 
 def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask,
-               models_fn: Callable = default_list_models) -> FastAPI:
+               models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -120,6 +120,13 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if state_file is not None:
             state_file.unlink(missing_ok=True)
         return _dump(state)
+
+    @app.get("/api/resource-groups")
+    def api_resource_groups():
+        try:
+            return {"groups": groups_fn(), "default": DEFAULT_RG}
+        except DiscoveryError as e:
+            return error(str(e))
 
     @app.post("/api/discover")
     def api_discover(resource_group: str = Form(DEFAULT_RG)):
@@ -183,6 +190,26 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         state["plans"] = plans
         save()
         return {"plans": [asdict(p) for p in plans], "message": ""}
+
+    op_docs: dict = {}  # filled on first use: parsing every spec file takes a moment
+
+    @app.get("/api/plan/detail")
+    def api_plan_detail(resource: str):
+        """Side by side: the Azure resource today, and each migration step with the Leaseweb calls it uses."""
+        plan = next((p for p in state["plans"] if p.resource_name == resource), None)
+        source = next((r for r in state["resources"] if r.name == resource), None)
+        if plan is None or source is None:
+            return error(f"No plan for '{resource}'.", 404)
+        if not op_docs:
+            op_docs.update(load_operation_docs())
+        steps, mentioned = [], set()
+        for text in plan.steps:
+            ids = find_operations(text, op_docs.keys())
+            mentioned.update(ids)
+            steps.append({"text": text, "operations": [op_docs[i] for i in ids]})
+        return {"resource": asdict(source), "proposal": plan.proposal, "steps": steps,
+                "unassigned": [op_docs[i] for i in plan.lw_operations if i in op_docs and i not in mentioned],
+                "code_changes": [asdict(c) for c in plan.code_changes], "warnings": plan.warnings}
 
     @app.get("/api/plan/progress")
     def api_plan_progress():

@@ -493,3 +493,48 @@ def test_claude_cli_model_must_be_an_alias_or_a_claude_model_id():
     assert c.post("/api/ai", data={"provider": "claude-cli", "model": "sonnet"}).status_code == 200
     assert c.post("/api/ai", data={"provider": "claude-cli", "model": "claude-sonnet-5-5"}).status_code == 200
     assert c.post("/api/ai", data={"provider": "claude-cli", "model": "--auto"}).status_code == 400
+
+
+def test_resource_groups_endpoint_lists_groups_and_the_default():
+    groups = [{"name": "hackaton-2026-rg", "location": "westeurope"}, {"name": "other", "location": "northeurope"}]
+    c = TestClient(create_app(state_file=None, groups_fn=lambda: groups))
+    r = c.get("/api/resource-groups").json()
+    assert r["groups"] == groups and r["default"] == "hackaton-2026-rg"
+
+
+def test_resource_groups_endpoint_reports_az_problems():
+    def fail():
+        raise DiscoveryError("Please run 'az login'")
+    r = TestClient(create_app(state_file=None, groups_fn=fail)).get("/api/resource-groups")
+    assert r.status_code == 502 and "az login" in r.json()["error"]
+
+
+def detail_client():
+    plan = {"proposal": "Run Vault.", "steps": ["Launch the VM with launchInstance.", "Copy the secrets by hand."],
+            "lw_operations": ["launchInstance", "createSecurityGroup"],
+            "code_changes": [{"file": "a.py", "summary": "s", "diff": "-a\n+b"}]}
+    c = client([VM, KV], ask=lambda p: plan)
+    run_to_assess(c)
+    c.post("/api/plan", data={"source_dirs": ""})
+    return c
+
+
+def test_plan_detail_pairs_each_step_with_its_technical_implementation():
+    d = detail_client().get("/api/plan/detail", params={"resource": "kv-hack"}).json()
+    assert d["resource"]["name"] == "kv-hack" and d["resource"]["type"] == "Microsoft.KeyVault/vaults"
+    first, second = d["steps"]
+    assert first["text"].startswith("Launch the VM") and [o["id"] for o in first["operations"]] == ["launchInstance"]
+    launch = first["operations"][0]
+    assert launch["method"] == "POST" and launch["path"] == "/publicCloud/v1/instances" and launch["summary"] == "Launch instance"
+    assert {f["name"] for f in launch["body_fields"]} >= {"region", "type", "imageId"}
+    assert second["operations"] == []
+
+
+def test_plan_detail_lists_operations_that_no_step_names():
+    d = detail_client().get("/api/plan/detail", params={"resource": "kv-hack"}).json()
+    assert [o["id"] for o in d["unassigned"]] == ["createSecurityGroup"]
+    assert d["code_changes"][0]["file"] == "a.py"
+
+
+def test_plan_detail_for_an_unknown_resource_is_404():
+    assert detail_client().get("/api/plan/detail", params={"resource": "nope"}).status_code == 404

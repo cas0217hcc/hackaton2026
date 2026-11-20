@@ -74,3 +74,33 @@ def test_boolean_flags_with_sensitive_looking_names_stay_visible():
     props = list_resources("rg", runner=dispatch(show))[0].properties["properties"]
     assert props["disablePasswordAuthentication"] is True and props["allowSharedKeyAccess"] is False
     assert props["adminPassword"] == "***"
+
+
+from migration_assistant.azure_discovery import list_resource_groups
+
+GROUPS = [{"name": "rg-b", "location": "westeurope"}, {"name": "hackaton-2026-rg", "location": "westeurope"}, {"name": "Rg-a", "location": "northeurope"}]
+
+
+def test_resource_groups_are_listed_sorted_by_name():
+    got = list_resource_groups(runner=fake(json.dumps(GROUPS)))
+    assert [g["name"] for g in got] == ["hackaton-2026-rg", "Rg-a", "rg-b"]
+    assert got[0] == {"name": "hackaton-2026-rg", "location": "westeurope"}
+
+
+def test_resource_group_listing_asks_az_for_groups_only():
+    seen = {}
+
+    def run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "[]", "")
+    list_resource_groups(runner=run)
+    assert seen["cmd"][:3] == ["az", "group", "list"]
+
+
+def test_resource_group_listing_failure_is_a_clear_error():
+    with pytest.raises(DiscoveryError, match="az login"):
+        list_resource_groups(runner=fake(stderr="Please run 'az login'", code=1))
+    with pytest.raises(DiscoveryError, match="not found"):
+        def missing(cmd, **kw):
+            raise FileNotFoundError
+        list_resource_groups(runner=missing)

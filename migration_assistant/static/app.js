@@ -1,3 +1,5 @@
+// Names shown to the user; the ids in STAGES stay the same for state and the API.
+const STAGE_LABELS = { discover: "Discover", assess: "Assess", plan: "Manual migration", migrate: "Automatic migration" };
 const STAGES = ["discover", "assess", "plan", "migrate"];
 const $ = (id) => document.getElementById(id);
 const done = {};
@@ -77,13 +79,16 @@ function show(stage) {
     const b = document.querySelector(`[data-stage="${s}"]`);
     b.classList.toggle("on", s === stage);
     b.classList.toggle("done", !!done[s]);
-    if (s === stage) b.setAttribute("aria-current", "step"); else b.removeAttribute("aria-current");
-    b.setAttribute("aria-label", `Step ${STAGES.indexOf(s) + 1}: ${s}${done[s] ? ", done" : ""}`);
+    if (s === stage) {
+      b.setAttribute("aria-current", "step");
+      b.scrollIntoView({ inline: "center", block: "nearest" });  // the stepper scrolls sideways on a phone
+    } else b.removeAttribute("aria-current");
+    b.setAttribute("aria-label", `Step ${STAGES.indexOf(s) + 1}: ${STAGE_LABELS[s]}${done[s] ? ", done" : ""}`);
   });
   const i = STAGES.indexOf(stage);
   const next = $("next");
   next.hidden = i === STAGES.length - 1 || !done[stage];
-  next.textContent = "Continue to " + STAGES[i + 1];
+  next.textContent = "Continue to " + (STAGE_LABELS[STAGES[i + 1]] || "").toLowerCase();
   next.dataset.to = STAGES[i + 1] || "";
   $("export").hidden = !(stage === "plan" || stage === "migrate");
   if (stage === "migrate" && !$("migrate-out").childElementCount) prepareMigrate();
@@ -141,7 +146,7 @@ function askInline(mount, { message, details = [], confirmLabel, danger = false,
 // "a", "a and b", "a, b and c"
 const listOf = (items) => (items.length < 2 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1]);
 
-const STAGE_RESULTS = { assess: "the assessment", plan: "the plans", migrate: "the migration values" };
+const STAGE_RESULTS = { assess: "the assessment", plan: "the manual migration plans", migrate: "the automatic migration values" };
 
 // Re-running a stage clears everything after it. Ask first when there is something to lose.
 async function confirmWipe(stage, anchor, verb, trigger) {
@@ -207,12 +212,24 @@ function typeName(type) {
 const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
 const pill = (route) => el("span", { class: "pill " + route }, LABELS[route] || route);
 
+// A changed file: name, summary, +/- counts and a button that opens the diff viewer.
+function changeCard(c) {
+  const st = DiffLib.diffStats(c.diff);
+  const view = el("button", { type: "button", class: "btn secondary", "aria-label": `View the diff of ${c.file}` }, "View diff");
+  view.addEventListener("click", () => openDiff(c, view));
+  return el("div", { class: "change" },
+    el("div", { class: "change-main" }, el("span", { class: "id change-file" }, c.file), el("span", { class: "change-sum" }, c.summary),
+      el("span", { class: "change-stats" }, el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed))),
+    view);
+}
+
 // ---- diff viewer: a modal with an inline and a side by side layout
 const diffDialog = () => $("diff-dialog");
 let diffCurrent = null;
 
 function savedDiffView() {
-  try { return localStorage.getItem("diffView") === "side" ? "side" : "inline"; } catch (e) { return "inline"; }
+  // Side by side unless the user picked inline before (a phone falls back to inline in setDiffView).
+  try { return localStorage.getItem("diffView") === "inline" ? "inline" : "side"; } catch (e) { return "side"; }
 }
 
 const narrow = () => window.matchMedia("(max-width: 720px)").matches;
@@ -396,8 +413,11 @@ function renderPlan(plans, message) {
     out.addEventListener("toggle", syncToggle, true);  // a card opened or closed by hand
     out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}`), toggleAll), ...plans.map((p) => {
       const card = el("details", { class: "plan" },
-        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
-      const box = el("div", { class: "plan-body" }, failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
+        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]),
+          el("div", { class: "plan-title" }, el("span", { class: "plan-type" }, typeName(resourceTypes[p.resource_name] || "")), el("h3", { class: "id" }, p.resource_name)), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
+      const detailsBtn = el("button", { type: "button", class: "btn secondary details-btn", "aria-label": `Open the details of ${p.resource_name}` }, "Details: steps and technical implementation");
+      detailsBtn.addEventListener("click", () => openDetail(p.resource_name, detailsBtn));
+      const box = el("div", { class: "plan-body" }, ...(failedPlan(p) ? [] : [el("div", { class: "details-row" }, detailsBtn)]), failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
       card.append(box);
       // Steps on the left; operations and code changes on the right (stacked on narrow screens).
       const main = el("div", { class: "plan-col" });
@@ -408,16 +428,16 @@ function renderPlan(plans, message) {
       if (p.lw_operations.length) {
         side.append(el("h4", {}, "Leaseweb operations"), el("div", { class: "chips" }, ...p.lw_operations.map((o) => el("span", { class: "chip" }, o))));
       }
-      if (p.code_changes.length) side.append(el("h4", {}, "Code changes"));
-      p.code_changes.forEach((c) => {
-        const st = DiffLib.diffStats(c.diff);
-        const view = el("button", { type: "button", class: "btn secondary", "aria-label": `View the diff of ${c.file}` }, "View diff");
-        view.addEventListener("click", () => openDiff(c, view));
-        side.append(el("div", { class: "change" },
-          el("div", { class: "change-main" }, el("span", { class: "id change-file" }, c.file), el("span", { class: "change-sum" }, c.summary),
-            el("span", { class: "change-stats" }, el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed))),
-          view));
-      });
+      // Only files that really change get a diff. "No change needed" entries are grouped and have no diff button.
+      const changed = p.code_changes.filter((c) => { const st = DiffLib.diffStats(c.diff); return st.added + st.removed > 0; });
+      const unchanged = p.code_changes.filter((c) => !changed.includes(c));
+      if (changed.length) side.append(el("h4", {}, "Code changes"));
+      changed.forEach((c) => side.append(changeCard(c)));
+      if (unchanged.length) {
+        side.append(el("details", { class: "nochange" },
+          el("summary", {}, `No change needed in ${unchanged.length} file${unchanged.length > 1 ? "s" : ""}`),
+          el("ul", {}, ...unchanged.map((c) => el("li", {}, el("span", { class: "id" }, c.file), el("span", { class: "change-sum" }, c.summary))))));
+      }
       const cols = [main, side].filter((c) => c.childElementCount);
       if (cols.length) box.append(el("div", { class: "plan-grid" + (cols.length === 1 ? " single" : "") }, ...cols));
       p.warnings.forEach((w) => box.append(el("p", { class: "warning" }, w)));
@@ -440,7 +460,7 @@ function refreshMode() {
   $("key-remove").hidden = !live;
   $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
   $("migrate-btn").classList.toggle("danger", live);
-  $("migrate-title").textContent = live ? "Live migration" : "Dry-run migration";
+  $("migrate-title").textContent = live ? "Automatic migration (LIVE)" : "Automatic migration (dry run)";
   $("migrate-desc").textContent = live
     ? "These Leaseweb API calls are sent in the order shown and can create billable resources. IDs from earlier responses are filled into later calls. A call that still needs values is skipped."
     : "The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.";
@@ -895,10 +915,46 @@ async function removeKey() {
   refreshMode();
 }
 
+// ---- resource group picker: a dropdown of the groups the az login can see (a text box if az cannot list them)
+const defaultGroup = () => $("rg").dataset.default;
+const currentGroup = () => ($("rg-typed").hidden ? $("rg").value : $("rg-typed").value).trim();
+
+function setGroup(name) {
+  const sel = $("rg");
+  if (![...sel.options].some((o) => o.value === name)) sel.append(el("option", { value: name }, name));
+  sel.value = name;
+  $("rg-typed").value = name;
+}
+
+let groupsLoaded = null;
+async function loadGroups(keep) {
+  const wanted = keep || currentGroup() || defaultGroup();
+  const sel = $("rg");
+  $("rg-refresh").disabled = true;
+  try {
+    const res = await fetch("/api/resource-groups");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Could not list resource groups (the server answered ${res.status}; restart it if it is an older version).`);
+    sel.replaceChildren(...data.groups.map((g) => el("option", { value: g.name }, g.location ? `${g.name} (${g.location})` : g.name)));
+    sel.hidden = false;
+    $("rg-typed").hidden = true;
+    setGroup(data.groups.some((g) => g.name === wanted) ? wanted : data.groups.some((g) => g.name === data.default) ? data.default : wanted);
+  } catch (e) {
+    // az could not list them: keep the default selectable and let the user type any name instead
+    sel.hidden = true;
+    $("rg-typed").hidden = false;
+    $("rg-typed").value = wanted;
+    setError(`${e.message} You can type the resource group name instead.`, null);
+  }
+  $("rg-refresh").disabled = false;
+}
+
 async function discover() {
   const trigger = $("discover-form").querySelector("button[type=submit]");
   if (!(await confirmWipe("discover", $("discover-form"), "Discover", trigger))) return;
-  const data = await call("/api/discover", { resource_group: $("rg").value }, $("discover-out"), discover);
+  const group = currentGroup();
+  if (!group) { setError("Enter or pick a resource group first.", null); return; }
+  const data = await call("/api/discover", { resource_group: group }, $("discover-out"), discover);
   if (!data) return;
   invalidateAfter("discover");
   renderDiscover(data.resources);
@@ -982,6 +1038,60 @@ async function plan() {
   show("plan");
 }
 
+// ---- detail modal: each migration step beside the Leaseweb call that implements it
+// Where a path parameter comes from, when it is not the response of an earlier call.
+const PARAM_SOURCE = { objectStorageId: "objectStorageId is an Object Storage product that already exists in your Leaseweb account" };
+
+function opCard(o) {
+  const required = o.body_fields.filter((f) => f.required);
+  const fieldRows = o.body_fields.map((f) => el("tr", {},
+    el("td", { class: "code" }, f.name, ...(f.required ? [el("span", { class: "req", "aria-hidden": "true" }, " *")] : [])),
+    el("td", { class: "sub" }, f.type + (f.enum.length ? `: ${f.enum.slice(0, 6).join(", ")}${f.enum.length > 6 ? ", ..." : ""}` : "")),
+    el("td", { class: "sub" }, f.description)));
+  return el("div", { class: "op-card" },
+    el("div", { class: "op-line" }, el("span", { class: "method m-" + o.method.toLowerCase() }, o.method), el("code", { class: "op-path" }, o.path)),
+    el("div", { class: "op-id" }, el("b", {}, o.id), o.summary ? " - " + o.summary : ""),
+    ...(o.description ? [el("p", { class: "op-desc" }, o.description)] : []),
+    ...(o.path_params.length ? [el("p", { class: "op-params" }, "Path: ", ...o.path_params.map((p) => el("code", {}, `{${p}}`)), ` (${o.path_params.map((p) => PARAM_SOURCE[p] || "from the response of the call that creates it").filter((v, i, a) => a.indexOf(v) === i).join("; ")})`)] : []),
+    o.body_fields.length
+      ? el("details", { class: "op-fields" }, el("summary", {}, `Request body: ${required.length} required, ${o.body_fields.length - required.length} optional`),
+          el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...fieldRows))))
+      : el("p", { class: "op-params" }, "No request body."));
+}
+
+async function openDetail(name, trigger) {
+  setError("");
+  trigger.disabled = true;
+  let res, d;
+  try { res = await fetch("/api/plan/detail?resource=" + encodeURIComponent(name)); d = await res.json(); }
+  catch (e) { trigger.disabled = false; setError("Request failed. Check the server and retry.", null); return; }
+  trigger.disabled = false;
+  if (!res.ok) { setError(d.error || `Could not load the details (the server answered ${res.status}; restart it if it is an older version).`, null); return; }
+  const r = d.resource;
+  $("detail-type").textContent = typeName(r.type);
+  $("detail-title").textContent = r.name;
+  $("detail-summary").textContent = d.proposal;
+  const config = flatten(r.properties || {});
+  const azure = el("details", { class: "azure-config" },
+    el("summary", {}, `Azure today: ${typeName(r.type)} in ${r.location || "unknown location"} (${config.length} configured values)`),
+    config.length ? el("dl", { class: "kv" }, ...config.slice(0, MAX_CONFIG_ROWS).flatMap(([k, v]) => [el("dt", { class: "code" }, k), el("dd", {}, v)])) : el("p", { class: "empty" }, "No configured values available."));
+  const rows = d.steps.map((st, i) => el("tr", {},
+    el("td", { class: "step-text" }, el("span", { class: "step-no" }, String(i + 1)), el("span", {}, st.text)),
+    el("td", {}, ...(st.operations.length ? st.operations.map(opCard) : [el("p", { class: "op-none" }, "No Leaseweb API call. This is done on the instance or in your code.")]))));
+  const parts = [azure];
+  parts.push(rows.length
+    ? el("div", { class: "scroll" }, el("table", { class: "steps-table", id: "detail-steps" }, el("thead", {}, el("tr", {}, el("th", {}, "Migration step"), el("th", {}, "Technical implementation on Leaseweb"))), el("tbody", {}, ...rows)))
+    : el("p", { class: "empty" }, "This plan has no migration steps."));
+  if (d.unassigned.length) parts.push(el("h3", { class: "detail-h" }, "Other Leaseweb calls in this plan"), el("div", { class: "op-grid" }, ...d.unassigned.map(opCard)));
+  if (d.code_changes.length) {
+    const changed = d.code_changes.filter((c) => { const st = DiffLib.diffStats(c.diff); return st.added + st.removed > 0; });
+    if (changed.length) parts.push(el("h3", { class: "detail-h" }, "Code changes"), ...changed.map(changeCard));
+  }
+  $("detail-body").replaceChildren(...parts);
+  $("detail-dialog").showModal();
+  $("detail-body").scrollTop = 0;
+}
+
 // Restore the last session from the server so a page refresh loses nothing.
 async function restore() {
   let s;
@@ -989,7 +1099,8 @@ async function restore() {
   live = !!s.api_key_set;
   chainIds = s.chain || {};
   refreshMode();
-  if (s.resource_group) $("rg").value = s.resource_group;
+  await groupsLoaded;  // the dropdown must hold the options before a saved group can be selected
+  if (s.resource_group) setGroup(s.resource_group);
   (s.source_dirs || []).slice(0, MAX_FOLDERS).forEach((d, i) => { if (i === 0) folderInputs()[0].value = d; else addFolder(d); });
   let furthest = null;
   if (s.resources.length) { renderDiscover(s.resources); furthest = "discover"; }
@@ -1020,8 +1131,8 @@ async function resetAll() {
   Object.keys(done).forEach((k) => { done[k] = false; });
   Object.keys(resourceTypes).forEach((k) => delete resourceTypes[k]);
   ["assess", "plan", "migrate"].forEach((s) => { setLocked(s, true); $(s + "-out").replaceChildren(); });
-  $("discover-out").replaceChildren(el("p", { class: "empty" }, "No resources loaded yet. Enter a resource group and discover it."));
-  $("rg").value = $("rg").defaultValue;
+  $("discover-out").replaceChildren(el("p", { class: "empty" }, "No resources loaded yet. Pick a resource group and discover it."));
+  setGroup(defaultGroup());
   $("folder-list").replaceChildren();
   addFolder();
   migrateRows = [];
@@ -1065,6 +1176,8 @@ $("retry").addEventListener("click", () => lastAction && lastAction());
 $("diff-inline").addEventListener("click", () => setDiffView("inline", true));
 $("diff-side").addEventListener("click", () => setDiffView("side", true));
 $("diff-close").addEventListener("click", () => diffDialog().close());
+$("detail-close").addEventListener("click", () => $("detail-dialog").close());
+$("detail-dialog").addEventListener("click", (e) => { if (e.target === $("detail-dialog")) $("detail-dialog").close(); });
 diffDialog().addEventListener("click", (e) => { if (e.target === diffDialog()) diffDialog().close(); });  // click on the backdrop
 $("restored-dismiss").addEventListener("click", () => { $("restored").hidden = true; });
 $("next").addEventListener("click", () => {
@@ -1086,4 +1199,6 @@ $("next").addEventListener("click", () => {
 })();
 addFolder();
 loadAi();
+$("rg-refresh").addEventListener("click", () => loadGroups());
+groupsLoaded = loadGroups();
 restore();

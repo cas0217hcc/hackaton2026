@@ -12,8 +12,8 @@ The app is a guided flow of four stages.
 |---|---|
 | **1. Discover** | Reads the resources of an Azure resource group with the `az` CLI, including each resource's configured values (VM size, SKU, address space and so on). Azure is only read, never changed. |
 | **2. Assess** | Labels every resource **Direct** (maps cleanly to Leaseweb), **Rebuild** (no equivalent) or **Included** (part of another resource). The table can be filtered by route and searched. |
-| **3. Plan** | For each Rebuild resource, an AI writes a Leaseweb infrastructure proposal with migration steps and the Leaseweb operations involved. If you give it source folders (up to 5), it also proposes code changes as diffs, for example replacing the Key Vault SDK with a Vault client. Plans are generated in parallel with a progress bar. |
-| **4. Migrate** | Lists the Leaseweb API calls that migrate the Direct resources, in dependency order, with the values prefilled from what Discover found. It runs as a **dry run** by default. With a Leaseweb API key set, it sends the calls for real. |
+| **3. Manual migration** | For each Rebuild resource, an AI writes a Leaseweb infrastructure proposal with migration steps and the Leaseweb operations involved. If you give it source folders (up to 5), it also proposes code changes as diffs, for example replacing the Key Vault SDK with a Vault client. Plans are generated in parallel with a progress bar. |
+| **4. Automatic migration** | Lists the Leaseweb API calls that migrate the Direct resources, in dependency order, with the values prefilled from what Discover found. It runs as a **dry run** by default. With a Leaseweb API key set, it sends the calls for real. |
 
 ### How resources are classified
 
@@ -54,8 +54,8 @@ Open <http://127.0.0.1:8000>. The server binds to localhost only. It is a single
 
 1. On **Discover**, enter a resource group and click **Discover resources**. For a large group this takes a while, because each resource's configuration is fetched.
 2. Continue to **Assess** and review the routes.
-3. On **Plan**, optionally add source folders, then **Generate plan**.
-4. On **Migrate**, review and fill in the values, then **Run dry-run migration**.
+3. On **Manual migration**, optionally add source folders, then **Generate plan**.
+4. On **Automatic migration**, review and fill in the values, then **Run dry-run migration**.
 
 `sample_app/` is a small Python app that uses Key Vault and Blob Storage. Use it as a source folder to see code changes in a plan.
 
@@ -75,7 +75,7 @@ To start with a different provider, set `AI_PROVIDER` (`claude-cli`, `anthropic-
 
 ### Leaseweb API key and live mode
 
-Without a Leaseweb key the app only does dry runs: it shows what it would send and sends nothing. Click **Leaseweb key**, paste the key and save. The header then shows **LIVE**, a red band appears under it, and Migrate sends real calls.
+Without a Leaseweb key the app only does dry runs: it shows what it would send and sends nothing. Click **Leaseweb key**, paste the key and save. The header then shows **LIVE**, a red band appears under it, and Automatic migration sends real calls.
 
 - The key is kept in server memory only. It is never written to disk, returned by any endpoint or included in an export. It is lost when the server stops.
 - A live run lists exactly which calls will be sent and which will be skipped, and waits for an explicit **Send**. A single live call asks the same way.
@@ -86,7 +86,7 @@ Without a Leaseweb key the app only does dry runs: it shows what it would send a
 
 Results are saved to `data/state.json` (git-ignored), so a page refresh or server restart loses nothing. The API keys are not saved. **Start over** in the header deletes the saved results after an inline confirmation. Re-running a stage warns you first when it would clear later stages.
 
-## Using the Migrate stage
+## Using Automatic migration
 
 Each call shows the Leaseweb operation, the Azure resource it is for, and one labelled input per value. Names, the region and the OS disk size are prefilled from the discovered resource. Fixed lists from the Leaseweb specs, such as regions, instance types and contract type, are dropdowns. With a key set, the region list is loaded live from Leaseweb.
 
