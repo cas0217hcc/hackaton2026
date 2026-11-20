@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azure to Leaseweb Migration Assistant</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Azure to Leaseweb migration</h1>
+  <span class="note">Dry-run mode: nothing is sent to Leaseweb</span>
+</header>
+
+<nav class="steps" aria-label="Stages">
+  <button class="step on" data-stage="discover">Discover</button>
+  <button class="step" data-stage="assess" disabled>Assess</button>
+  <button class="step" data-stage="plan" disabled>Plan</button>
+  <button class="step" data-stage="migrate" disabled>Migrate</button>
+</nav>
+
+<main>
+  <div id="error" class="error" role="alert" hidden>
+    <span id="error-text"></span>
+    <button class="btn secondary" id="retry">Retry</button>
+  </div>
+
+  <section id="stage-discover" class="stage">
+    <form id="discover-form" class="row">
+      <label for="rg">Resource group</label>
+      <input id="rg" name="resource_group" value="{{ default_rg }}" autocomplete="off">
+      <button class="btn" type="submit">Discover resources</button>
+    </form>
+    <div id="discover-out"></div>
+  </section>
+
+  <section id="stage-assess" class="stage" hidden>
+    <div id="assess-out"></div>
+  </section>
+
+  <section id="stage-plan" class="stage" hidden>
+    <form id="plan-form" class="row">
+      <label for="src">Application source folder (optional)</label>
+      <input id="src" name="source_dir" placeholder="/path/to/app" autocomplete="off">
+      <button class="btn" type="submit">Generate plan</button>
+    </form>
+    <div id="plan-out"></div>
+  </section>
+
+  <section id="stage-migrate" class="stage" hidden>
+    <div class="row"><button class="btn" id="migrate-btn">Run dry-run migration</button></div>
+    <div id="migrate-out"></div>
+  </section>
+
+  <footer class="actions">
+    <a class="btn secondary" id="export" href="/export" download="migration-plan.md" hidden>Export plan</a>
+    <button class="btn" id="next" hidden>Continue</button>
+  </footer>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
