@@ -27,7 +27,7 @@ from .folder_picker import FolderPickerError, pick_folder as default_pick_folder
 from .costs import azure_vm_prices, leaseweb_prices
 from .datamove import data_steps
 from .diffcheck import check_plans, patch_text
-from .dryrun import (BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, curl_script, path_matches,
+from .dryrun import (BASE_URL, DryRunExecutor, default_http, network_hint, LeasewebExecutor, annotate_chain, build_calls, curl_script, path_matches,
                      run_calls, teardown_calls)
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
@@ -150,7 +150,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     launch_options = load_launch_options()
 
     save_lock = threading.Lock()
-    client = http if http is not None else httpx.Client()  # one connection pool for every Leaseweb request
+    client = http if http is not None else default_http()  # one connection pool for every outbound request
 
     def save() -> None:
         if state_file is None:
@@ -201,13 +201,18 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
             resp = client.request("GET", BASE_URL + "/publicCloud/v1/instances", params={"limit": 1},
                                   headers={"X-LSW-Auth": key, "Accept": "application/json"}, timeout=15)
             status = resp.status_code
-        except Exception:
-            key_check.update(verified=None, detail="Could not reach the Leaseweb API to check the key. It is kept; check your network.")
+        except Exception as e:
+            key_check.update(verified=None, detail="Could not reach the Leaseweb API to check the key, so it is kept but not verified. "
+                                                   + network_hint(e, key))
             return {"api_key_set": True, "key_verified": None, "detail": key_check["detail"]}
-        if status in (401, 403):
+        if status == 401:
             secrets["api_key"] = None
             key_check.update(verified=None, detail="")
-            return error("Leaseweb rejected this key (HTTP %d). It was not kept, so the app stays in dry run." % status, 400)
+            return error("Leaseweb rejected this key (HTTP 401). It was not kept, so the app stays in dry run.", 400)
+        if status == 403:  # a real key without access to the Public Cloud API: say so instead of calling it wrong
+            key_check.update(verified=False, detail="Leaseweb knows this key, but it may not use the Public Cloud API (HTTP 403), "
+                                                    "so launching instances will fail. Check the key's permissions in the Customer Portal.")
+            return {"api_key_set": True, "key_verified": False, "detail": key_check["detail"]}
         if 200 <= status < 300:
             key_check.update(verified=True, detail="Leaseweb accepted the key.")
         else:

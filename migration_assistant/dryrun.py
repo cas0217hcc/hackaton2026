@@ -1,6 +1,7 @@
 import json
 import re
 import shlex
+import ssl
 import time
 from typing import Any, Callable, Protocol
 
@@ -143,6 +144,26 @@ class DryRunExecutor:
 BASE_URL = "https://api.leaseweb.com"
 
 
+def default_http() -> httpx.Client:
+    """An HTTP client that trusts the operating system's certificates (the Windows store, the macOS or
+    Linux system bundle), not only the certifi list httpx ships with. Networks that inspect HTTPS
+    re-sign traffic with their own root certificate, which is installed in the system store only."""
+    return httpx.Client(verify=ssl.create_default_context())
+
+
+def network_hint(e: Exception, secret: str = "") -> str:
+    """One sentence on why a request did not get through, with the key masked out."""
+    text = str(e).replace(secret, "***") if secret else str(e)
+    if "CERTIFICATE_VERIFY_FAILED" in text or isinstance(e, ssl.SSLError):
+        return ("The HTTPS certificate was not trusted. If your network inspects HTTPS, its root certificate must be "
+                "installed in the system certificate store.")
+    if isinstance(e, httpx.TimeoutException):
+        return "The request timed out. Check your network or proxy."
+    if isinstance(e, httpx.ConnectError):
+        return f"The connection failed ({text[:160]}). Check your network or proxy."
+    return f"The request failed ({type(e).__name__}: {text[:160]})."
+
+
 def unresolved(call: DryRunCall) -> list[str]:
     """Placeholders still left in a call: {pathParam} in the path and <value> inside the body."""
     found = re.findall(r"\{[^}/]+\}", call.path)
@@ -177,7 +198,7 @@ class LeasewebExecutor:
     def __init__(self, api_key: str, http: Any = None, base_url: str = BASE_URL, timeout: int = 30,
                  wait_timeout: float = 0, poll_every: float = 10, sleep: Callable[[float], None] = time.sleep):
         self._key = api_key
-        self._http = http if http is not None else httpx.Client()
+        self._http = http if http is not None else default_http()
         self._base = base_url
         self._timeout = timeout
         self._wait_timeout = wait_timeout  # 0: never wait for an instance to come up
@@ -220,7 +241,7 @@ class LeasewebExecutor:
         try:
             resp = self._http.request(call.method, self._base + call.path, **kwargs)
         except Exception as e:  # network/TLS errors: report, never raise, never leak the key
-            return {**base, "sent": False, "error": str(e).replace(self._key, "***")}
+            return {**base, "sent": False, "error": network_hint(e, self._key)}
         try:
             payload = resp.json()
         except Exception:

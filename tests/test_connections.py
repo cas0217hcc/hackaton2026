@@ -135,7 +135,7 @@ def test_unreachable_leaseweb_keeps_the_key_unverified():
     c = client(http=KeyHttp(exc=RuntimeError("offline")))
     c.post("/api/key", data={"api_key": KEY})
     r = c.post("/api/key/test").json()
-    assert r["api_key_set"] is True and r["key_verified"] is None and "network" in r["detail"]
+    assert r["api_key_set"] is True and r["key_verified"] is None and "offline" in r["detail"]
 
 
 def test_key_test_without_a_key():
@@ -154,3 +154,38 @@ def test_plan_is_refused_when_the_ai_provider_is_not_ready(monkeypatch):
     r = c.post("/api/plan", data={"source_dirs": ""})
     assert r.status_code == 409 and "not found on PATH" in r.json()["error"]
     assert "not ready" in c.get("/api/ai").json()["problem"]
+
+
+def test_tls_inspection_is_explained_when_verifying_the_key():
+    import ssl
+    err = ssl.SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate")
+    c = client(http=KeyHttp(exc=err))
+    c.post("/api/key", data={"api_key": KEY})
+    r = c.post("/api/key/test").json()
+    assert r["key_verified"] is None and "system certificate store" in r["detail"] and KEY not in r["detail"]
+
+
+def test_network_hint_masks_the_key_and_names_the_cause():
+    import httpx
+    from migration_assistant.dryrun import network_hint
+    assert "timed out" in network_hint(httpx.ReadTimeout("slow"))
+    text = network_hint(RuntimeError(f"bad header {KEY}"), KEY)
+    assert KEY not in text and "RuntimeError" in text
+
+
+def test_default_http_trusts_the_system_store(monkeypatch):
+    import ssl
+    from migration_assistant import dryrun
+    made = []
+    real = ssl.create_default_context
+    monkeypatch.setattr(dryrun.ssl, "create_default_context", lambda *a, **k: made.append(1) or real(*a, **k))
+    dryrun.default_http().close()
+    assert made == [1]
+
+
+def test_key_without_public_cloud_access_is_kept_and_explained():
+    c = client(http=KeyHttp(403))
+    c.post("/api/key", data={"api_key": KEY})
+    r = c.post("/api/key/test")
+    assert r.status_code == 200 and r.json()["key_verified"] is False and "Public Cloud" in r.json()["detail"]
+    assert c.get("/api/state").json()["api_key_set"] is True
