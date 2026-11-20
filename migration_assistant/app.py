@@ -72,7 +72,9 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
 
     @app.get("/")
     def index(request: Request):
-        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG})
+        # Version static URLs by file mtime so browsers never reuse stale JS/CSS.
+        v = int(max(f.stat().st_mtime for f in (HERE / "static").iterdir()))
+        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v})
 
     @app.get("/api/state")
     def api_state():

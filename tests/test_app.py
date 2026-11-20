@@ -135,3 +135,8 @@ def test_source_dirs_persist_and_old_single_dir_state_loads(tmp_path):
     assert persistent_client([], f).get("/api/state").json()["source_dirs"] == [str(d)]
     f.write_text(json.dumps({"source_dir": "/old/app"}))
     assert persistent_client([], f).get("/api/state").json()["source_dirs"] == ["/old/app"]
+
+
+def test_static_urls_are_versioned_to_defeat_browser_cache():
+    html = client([VM]).get("/").text
+    assert "/static/app.js?v=" in html and "/static/style.css?v=" in html
