@@ -108,6 +108,19 @@ td.sub { color: var(--mute); }
 .sources-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Expandable resource rows */
+.expander { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; }
+.expander:hover { background: var(--acc-tint); }
+.expander .chev { margin: 0; transform: rotate(-45deg); }
+.expander[aria-expanded="true"] .chev { transform: rotate(45deg) translate(-1px, -1px); }
+tr.item:hover td { background: #fafcfd; }
+tr.detail > td { padding: 0; background: #f9fbfc; }
+.config { padding: 14px 20px 16px 62px; }
+.kv { display: grid; grid-template-columns: minmax(180px, 34%) 1fr; gap: 4px 20px; margin: 0; max-width: 960px; }
+.kv dt { color: var(--mute); overflow-wrap: anywhere; font-size: 12px; }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .config { padding-left: 16px; } .kv { grid-template-columns: 1fr; } .kv dd { margin-bottom: 6px; } }
+
 /* Pills, summary */
 .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pill.direct { background: var(--ok-bg); color: var(--ok); }

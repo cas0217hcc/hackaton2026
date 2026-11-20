@@ -147,11 +147,52 @@ function diffBlock(text) {
   return pre;
 }
 
+// Turn nested configuration into [dotted.key, text] pairs, skipping empty values.
+function flatten(value, prefix = "", out = [], depth = 0) {
+  if (value === null || value === undefined || value === "") return out;
+  if (Array.isArray(value)) {
+    if (!value.length) return out;
+    if (value.every((v) => v === null || typeof v !== "object")) { out.push([prefix, value.join(", ")]); return out; }
+    value.forEach((v, i) => flatten(v, `${prefix}[${i}]`, out, depth + 1));
+  } else if (typeof value === "object") {
+    if (depth > 6) { out.push([prefix, "(nested)"]); return out; }
+    Object.entries(value).forEach(([k, v]) => flatten(v, prefix ? `${prefix}.${k}` : k, out, depth + 1));
+  } else {
+    out.push([prefix, String(value)]);
+  }
+  return out;
+}
+
+const MAX_CONFIG_ROWS = 80;
+
+function configPanel(r) {
+  const rows = flatten(r.properties || {});
+  const box = el("div", { class: "config" });
+  if (!rows.length) { box.append(el("p", { class: "empty" }, "No configured values available for this resource.")); return box; }
+  const dl = el("dl", { class: "kv" });
+  rows.slice(0, MAX_CONFIG_ROWS).forEach(([k, v]) => dl.append(el("dt", { class: "code" }, k), el("dd", {}, v)));
+  box.append(dl);
+  if (rows.length > MAX_CONFIG_ROWS) box.append(el("p", { class: "note" }, `${rows.length - MAX_CONFIG_ROWS} more values not shown.`));
+  return box;
+}
+
 function renderDiscover(resources) {
-  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found.`), table(["Resource", "Type", "Location"], resources.map((r) => {
+  const body = [];
+  resources.forEach((r, i) => {
     resourceTypes[r.name] = r.type;
-    return el("tr", {}, el("td", {}, resCell(r.name)), el("td", { title: r.type }, typeName(r.type)), el("td", {}, r.location));
-  })));
+    const panelId = "config-" + i;
+    const toggle = el("button", { type: "button", class: "expander", "aria-expanded": "false", "aria-controls": panelId, "aria-label": `Show configured values of ${r.name}` }, el("span", { class: "chev", "aria-hidden": "true" }));
+    const detail = el("tr", { class: "detail", id: panelId, hidden: "" }, el("td", { colspan: "3" }, configPanel(r)));
+    toggle.addEventListener("click", () => {
+      const open = toggle.getAttribute("aria-expanded") !== "true";
+      toggle.setAttribute("aria-expanded", String(open));
+      detail.hidden = !open;
+    });
+    body.push(el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type), el("span", { class: "id" }, r.name))),
+      el("td", { title: r.type }, typeName(r.type)), el("td", {}, r.location)), detail);
+  });
+  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values.`),
+    table(["Resource", "Type", "Location"], body));
   done.discover = true;
   setLocked("assess", false);
 }
