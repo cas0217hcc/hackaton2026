@@ -29,3 +29,12 @@ def test_dry_run_executor_sends_nothing(monkeypatch):
     call = build_calls([a("st", "Microsoft.Storage/storageAccounts")])[0]
     result = DryRunExecutor().execute(call)
     assert result["sent"] is False and result["dry_run"] is True
+
+
+def test_calls_that_take_a_body_have_one():
+    from migration_assistant.assess import RULES
+    calls = build_calls([a("vnet", "Microsoft.Network/virtualNetworks"), a("nsg", "Microsoft.Network/networkSecurityGroups")])
+    bodies = {c.operation_id: c.body for c in calls}
+    assert bodies["post/privateNetworks"] == {"name": "<network-name>"}
+    assert bodies["authorizeSecurityGroupFirewallRules"]["rules"][0]["protocol"] == "TCP"
+    assert bodies["addToPrivateNetwork"] == {}  # spec: this operation takes no body

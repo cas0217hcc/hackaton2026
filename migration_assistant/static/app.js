@@ -61,7 +61,7 @@ function table(headers, rows) {
   const t = el("table");
   t.append(el("thead", {}, el("tr", {}, ...headers.map((h) => el("th", {}, h)))));
   t.append(el("tbody", {}, ...rows));
-  return t;
+  return el("div", { class: "scroll" }, t);
 }
 
 const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
@@ -138,9 +138,9 @@ async function migrate() {
   } else {
     out.replaceChildren(
       el("p", { class: "note" }, "Dry run: these calls were not sent."),
-      table(["Method", "Path", "Operation", "Body"], data.calls.map((c) =>
+      table(["Method", "Path", "Operation", "Request body"], data.calls.map((c) =>
         el("tr", {}, el("td", { class: "code" }, c.method), el("td", { class: "code" }, c.path),
-          el("td", { class: "code" }, c.operation_id), el("td", { class: "code" }, JSON.stringify(c.body))))));
+          el("td", { class: "code" }, c.operation_id), el("td", { class: Object.keys(c.body).length ? "body" : "body none" }, Object.keys(c.body).length ? JSON.stringify(c.body, null, 1) : "No request body")))));
   }
   show("migrate");
 }

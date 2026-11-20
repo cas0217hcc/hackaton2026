@@ -8,6 +8,8 @@ PLACEHOLDER_BODIES = {
     "launchInstance": {"regionName": "eu-west-3", "typeName": "lsw.c3.large", "imageId": "UBUNTU_22_04_64BIT", "rootDiskSize": 50},
     "createObjectStorageBucket": {"name": "<bucket-name>", "region": "nl-01"},
     "createSecurityGroup": {"name": "<security-group-name>"},
+    "post/privateNetworks": {"name": "<network-name>"},
+    "authorizeSecurityGroupFirewallRules": {"rules": [{"protocol": "TCP", "startPort": 443, "endPort": 443, "source": "0.0.0.0/0"}]},
 }
 
 

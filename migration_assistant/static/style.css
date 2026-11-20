@@ -69,3 +69,8 @@ pre .add { color: #8fe0a4; } pre .del { color: #ff9d9d; }
 .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; }
 [hidden] { display: none !important; }
 @media (max-width: 640px) { main { padding: 0 12px; } .top { flex-direction: column; gap: 2px; } }
+
+.scroll { overflow-x: auto; }
+td.code { white-space: nowrap; }
+td.body { font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 220px; max-width: 360px; }
+td.body:empty, td.body.none { color: var(--mute); }
