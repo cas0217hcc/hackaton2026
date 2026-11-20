@@ -44,7 +44,7 @@ The app is a guided flow of four stages.
 
 ### Dependencies between resources
 
-Some resources can only be created after another exists on Leaseweb: a VM needs its network, and an app needs the database or vault it connects to. Assess finds these links and shows them in the **Needs first** column, together with a step number (step 1 needs nothing, step 2 needs something from step 1, and so on).
+Some resources can only be created after another exists on Leaseweb: a VM needs its network, and an app needs the database or vault it connects to. Assess finds these links and shows them in the **Needs first** column, together with a step number (step 1 needs nothing, step 2 needs something from step 1, and so on). The table lists resources in step order, lowest first, with **Included** resources last.
 
 - **From the configuration:** when a resource's settings contain the id of another discovered resource (a VM's network interface points to a subnet, and the subnet to its virtual network and security group), that is a dependency. These links are certain.
 - **From the AI:** the selected AI provider reads the configurations once more and reports links that only show in app settings or names, such as an app using a Key Vault. These are tagged **AI** and should be reviewed. Unknown resource names, self-links and cycles are dropped, and the page says so.
