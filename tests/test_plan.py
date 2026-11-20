@@ -50,3 +50,12 @@ from migration_assistant.claude_cli import ClaudeError
 def test_malformed_code_change_raises_claude_error():
     with pytest.raises(ClaudeError):
         build_plan(KV, KV_RES, {"a.py": "x"}, ask=answer(changes=[{"file": "a.py"}]))
+
+
+def test_steps_parsed():
+    ask = lambda p: {"proposal": "Run Vault.", "steps": ["Create SG", "Launch VM"], "lw_operations": [], "code_changes": []}
+    assert build_plan(KV, KV_RES, {}, ask=ask).steps == ["Create SG", "Launch VM"]
+
+
+def test_missing_steps_defaults_to_empty():
+    assert build_plan(KV, KV_RES, {}, ask=answer()).steps == []

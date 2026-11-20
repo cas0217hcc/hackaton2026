@@ -84,6 +84,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json) ->
             lines.append(f"- **{a.resource_name}**: {a.route} -> {a.target}. {a.rationale}")
         for p in state["plans"]:
             lines += ["", f"## Plan: {p.resource_name}", "", p.proposal, ""]
+            lines += [f"{i}. {st}" for i, st in enumerate(p.steps, 1)] + [""] if p.steps else []
             lines += [f"Leaseweb operations: {', '.join(p.lw_operations) or 'none'}", ""]
             for c in p.code_changes:
                 lines += [f"### {c.file}", c.summary, "```diff", c.diff, "```", ""]

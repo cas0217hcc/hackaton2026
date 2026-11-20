@@ -106,9 +106,19 @@ async function plan() {
     out.replaceChildren(el("p", { class: "empty" }, data.message));
   } else {
     out.replaceChildren(...data.plans.map((p) => {
-      const box = el("div", { class: "plan" }, el("h3", { class: "id" }, p.resource_name), el("p", {}, p.proposal));
-      if (p.lw_operations.length) box.append(el("p", {}, "Leaseweb operations: ", el("span", { class: "code" }, p.lw_operations.join(", "))));
-      p.code_changes.forEach((c) => box.append(el("h4", { class: "id" }, c.file), el("p", {}, c.summary), diffBlock(c.diff)));
+      const box = el("div", { class: "plan" },
+        el("div", { class: "plan-head" }, el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild")),
+        el("p", { class: "summary" }, p.proposal));
+      if (p.steps.length) {
+        box.append(el("h4", {}, "Migration steps"), el("ol", { class: "steps-list" }, ...p.steps.map((t) => el("li", {}, t))));
+      }
+      if (p.lw_operations.length) {
+        box.append(el("h4", {}, "Leaseweb operations"), el("div", { class: "chips" }, ...p.lw_operations.map((o) => el("span", { class: "chip" }, o))));
+      }
+      p.code_changes.forEach((c) => {
+        const d = el("details", { class: "change", open: "" }, el("summary", {}, el("span", { class: "id" }, c.file), " - " + c.summary), diffBlock(c.diff));
+        box.append(d);
+      });
       p.warnings.forEach((w) => box.append(el("p", { class: "warning" }, w)));
       return box;
     }));

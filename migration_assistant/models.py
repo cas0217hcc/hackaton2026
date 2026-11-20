@@ -32,6 +32,7 @@ class Plan:
     resource_name: str
     proposal: str
     lw_operations: list[str] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
     code_changes: list[CodeChange] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
