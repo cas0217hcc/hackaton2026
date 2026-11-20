@@ -14,6 +14,35 @@ function el(tag, attrs = {}, ...kids) {
   return e;
 }
 
+// ---- loading feedback
+// A button whose action is running: spinner, a label that says what is happening, no second click.
+function setLoading(btn, on, label) {
+  if (on) {
+    if (btn.dataset.idleLabel === undefined) btn.dataset.idleLabel = btn.textContent;
+    if (label) btn.textContent = label;
+    btn.classList.add("loading");
+    btn.setAttribute("aria-busy", "true");
+    btn.disabled = true;
+  } else {
+    if (btn.dataset.idleLabel !== undefined) btn.textContent = btn.dataset.idleLabel;
+    delete btn.dataset.idleLabel;
+    btn.classList.remove("loading");
+    btn.removeAttribute("aria-busy");
+    btn.disabled = false;
+  }
+}
+
+// The route station of a stage that is working gets a turning ring.
+function stageWorking(stage, on) {
+  document.querySelector(`[data-stage="${stage}"]`).classList.toggle("working", on);
+}
+
+// What the output area shows while a request runs: what is happening and how long it can take.
+function loadingPanel(title, hint) {
+  return el("div", { class: "loading-panel", role: "status" }, el("span", { class: "spinner", "aria-hidden": "true" }),
+    el("div", {}, el("p", { class: "loading-title" }, title), ...(hint ? [el("p", { class: "loading-hint" }, hint)] : [])));
+}
+
 // Authored line icons (static strings, no user data), keyed by Azure resource type.
 const ICON_PATHS = {
   server: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>',
@@ -159,9 +188,10 @@ async function confirmWipe(stage, anchor, verb, trigger) {
     confirmLabel: `${verb} again`, returnFocus: trigger });
 }
 
-async function call(path, form, outEl, action, method = "POST") {
+async function call(path, form, outEl, action, method = "POST", loading = null) {
   setError("");
-  outEl.replaceChildren(el("div", { class: "skeleton" }), el("div", { class: "skeleton" }), el("div", { class: "skeleton" }));
+  outEl.replaceChildren(...(loading ? [loadingPanel(loading.title, loading.hint)] : []),
+    el("div", { class: "skeleton" }), el("div", { class: "skeleton" }), el("div", { class: "skeleton" }));
   let res, data;
   try {
     res = await fetch(path, { method, body: form ? (form instanceof URLSearchParams ? form : new URLSearchParams(form)) : undefined });
@@ -187,10 +217,15 @@ function table(headers, rows) {
 }
 
 // A table whose column headers sort it: ascending, descending, then back to the given order.
-// entries: [{ rows: [tr, ...], values: [text per column] }]; extra rows (e.g. a detail row) move with their entry.
-function sortableTable(columns, entries) {
+// entries: [{ rows: [tr, ...], values: [text or number per column] }]; extra rows (e.g. a detail row) move with their entry.
+// initial: the column the table opens sorted by (ascending), or -1 for the given order.
+const compareValues = (x, y) => (typeof x === "number" && typeof y === "number"
+  ? (x > y) - (x < y)
+  : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: "base" }));
+
+function sortableTable(columns, entries, initial = -1) {
   const tbody = el("tbody");
-  let sort = { col: -1, dir: 1 };
+  let sort = { col: initial, dir: 1 };
   const ths = columns.map((name, col) => {
     const btn = el("button", { type: "button", class: "sort" }, name, el("span", { class: "arrow", "aria-hidden": "true" }));
     btn.addEventListener("click", () => {
@@ -201,7 +236,7 @@ function sortableTable(columns, entries) {
   });
   function paint() {
     const shown = sort.col < 0 ? entries
-      : entries.slice().sort((a, b) => sort.dir * a.values[sort.col].localeCompare(b.values[sort.col], undefined, { numeric: true, sensitivity: "base" }));
+      : entries.slice().sort((a, b) => sort.dir * compareValues(a.values[sort.col], b.values[sort.col]) || compareValues(a.values[0], b.values[0]));
     tbody.replaceChildren(...shown.flatMap((e) => e.rows));
     ths.forEach((th, col) => {
       th.setAttribute("aria-sort", sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none");
@@ -389,7 +424,26 @@ function needsCell(a) {
     el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
 }
 
+// Creation step per resource (0 = needs nothing), filled at Assess; plans follow the same order.
+const waveOf = {};
+const stepOf = (name) => (waveOf[name] ?? Infinity);
+
+// Long reasons show four lines first, so the table stays scannable; Show more opens the rest.
+function whyCell(text) {
+  const body = el("div", { class: "why" }, text);
+  if (text.length < 260) return el("td", { class: "sub" }, body);
+  body.classList.add("clamped");
+  const more = el("button", { type: "button", class: "link more", "aria-expanded": "false" }, "Show more");
+  more.addEventListener("click", () => {
+    const open = !body.classList.toggle("clamped");
+    more.setAttribute("aria-expanded", String(open));
+    more.textContent = open ? "Show less" : "Show more";
+  });
+  return el("td", { class: "sub" }, body, more);
+}
+
 function renderAssess(assessments, message = "") {
+  assessments.forEach((a) => { waveOf[a.resource_name] = a.route === "included" ? null : (a.wave ?? 0); });
   const picked = new Set();
   let query = "";
   const entries = assessments.map((a) => {
@@ -399,10 +453,9 @@ function renderAssess(assessments, message = "") {
     const deps = (a.dependencies || []).map((d) => d.name);
     const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)),
       el("td", { title: resourceTypes[a.resource_name] || "" }, source, ...(sub ? [el("div", { class: "headline" }, sub)] : [])),
-      el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), el("td", { class: "sub" }, a.rationale));
+      el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), whyCell(a.rationale));
     tr.dataset.text = [a.resource_name, source, a.target, a.rationale, LABELS[a.route], ...deps].join(" ").toLowerCase();
-    const needs = a.route === "included" ? "" : `Step ${(a.wave ?? 0) + 1} ${deps.join(" ")}`;
-    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, needs, a.rationale] };
+    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, stepOf(a.resource_name), a.rationale] };
   });
   const rows = entries.map((e) => e.rows[0]);
   const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, source, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
@@ -435,9 +488,9 @@ function renderAssess(assessments, message = "") {
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
       el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately. ",
-      el("b", {}, "Needs first"), " lists the resources that must exist on Leaseweb before this one is created. Manual and Automatic migration follow this order."),
+      el("b", {}, "Step"), " is the order resources are created on Leaseweb; under it are the resources that must exist first. Manual and Automatic migration follow this order."),
     ...(message ? [el("p", { class: "note", role: "status" }, message)] : []),
-    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Needs first", "Why"], entries));
+    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Step", "Why"], entries, 4));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -460,10 +513,11 @@ function renderPlan(plans, message) {
       syncToggle();
     });
     out.addEventListener("toggle", syncToggle, true);  // a card opened or closed by hand
-    out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}`), toggleAll), ...plans.map((p) => {
+    const ordered = plans.slice().sort((a, b) => compareValues(stepOf(a.resource_name), stepOf(b.resource_name)));
+    out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}, in creation order`), toggleAll), ...ordered.map((p) => {
       const card = el("details", { class: "plan" },
         el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]),
-          el("div", { class: "plan-title" }, el("span", { class: "plan-type" }, typeName(resourceTypes[p.resource_name] || "")), el("h3", { class: "id" }, p.resource_name)), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
+          el("div", { class: "plan-title" }, el("span", { class: "plan-type" }, typeName(resourceTypes[p.resource_name] || "")), el("h3", { class: "id" }, p.resource_name)), Number.isFinite(stepOf(p.resource_name)) ? el("span", { class: "plan-step" }, `Step ${stepOf(p.resource_name) + 1}`) : "", failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
       const detailsBtn = el("button", { type: "button", class: "btn secondary details-btn", "aria-label": `Open the details of ${p.resource_name}` }, "Details: steps and technical implementation");
       detailsBtn.addEventListener("click", () => openDetail(p.resource_name, detailsBtn));
       const box = el("div", { class: "plan-body" }, ...(failedPlan(p) ? [] : [el("div", { class: "details-row" }, detailsBtn)]), failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
@@ -752,15 +806,18 @@ async function runRow(row) {
   setError("");
   $("migrate-note").replaceChildren();
   setBusy(true);
+  row.runBtn.classList.add("loading");
   let res, data;
   try {
     res = await fetch("/api/migrate/run-one", { method: "POST", body: new URLSearchParams({ call: JSON.stringify(call) }) });
     data = await res.json();
   } catch (e) {
+    row.runBtn.classList.remove("loading");
     setBusy(false);
     rowError(row, "Request failed. Check the server and retry.");
     return;
   }
+  row.runBtn.classList.remove("loading");
   if (!res.ok) { setBusy(false); rowError(row, data.error || "Request failed"); return; }
   showResult(row, data.result);
   busy = false;
@@ -769,7 +826,8 @@ async function runRow(row) {
 }
 
 async function prepareMigrate() {
-  const data = await call("/api/migrate/calls", null, $("migrate-out"), prepareMigrate, "GET");
+  const data = await call("/api/migrate/calls", null, $("migrate-out"), prepareMigrate, "GET",
+    { title: "Preparing the Leaseweb calls", hint: "Builds each call from the Leaseweb API definitions, in the order they must run." });
   if (!data) return;
   await ensureOptions();
   live = data.live;
@@ -811,11 +869,14 @@ async function migrate() {
   setError("");
   setBusy(true);
   btn.textContent = live ? `Sending ${plural(send.length, "call")}...` : "Running dry run...";
+  btn.classList.add("loading");
+  stageWorking("migrate", true);
   let res, data;
   try {
     res = await fetch("/api/migrate", { method: "POST", body: new URLSearchParams({ calls: JSON.stringify(calls) }) });
     data = await res.json();
-  } catch (e) { setBusy(false); refreshMode(); setError("Request failed. Check the server and retry.", migrate); return; }
+  } catch (e) { res = null; } finally { btn.classList.remove("loading"); stageWorking("migrate", false); }
+  if (!res || data === undefined) { setBusy(false); refreshMode(); setError("Request failed. Check the server and retry.", migrate); return; }
   if (!res.ok) { setBusy(false); refreshMode(); setError(data.error || "Request failed", migrate); return; }
   data.results.forEach((r, i) => showResult(todo[i].row, r));
   busy = false;
@@ -935,14 +996,14 @@ function setAiResult(text, ok) {
 
 async function testAi() {
   if (!(await saveAi())) return;
-  setAiResult("Testing...", true);
-  $("ai-test").disabled = true;
+  setAiResult("", true);
+  setLoading($("ai-test"), true, "Testing...");
   try {
     const res = await fetch("/api/ai/test", { method: "POST" });
     const data = await res.json();
     setAiResult(res.ok ? `Works: ${aiLabel(aiState)} answered.` : data.error || "Test failed.", res.ok);
   } catch (err) { setAiResult("Request failed. Check the server.", false); }
-  $("ai-test").disabled = false;
+  setLoading($("ai-test"), false);
 }
 
 async function removeAiKey() {
@@ -986,14 +1047,14 @@ function setGroup(name) {
   $("rg-typed").value = name;
 }
 
-let groupsLoaded = null;
 async function loadGroups(keep) {
-  const wanted = keep || currentGroup() || defaultGroup();
   const sel = $("rg");
-  $("rg-refresh").disabled = true;
+  setLoading($("rg-refresh"), true, "Loading list...");
+  let wanted = keep || currentGroup() || defaultGroup();
   try {
     const res = await fetch("/api/resource-groups");
     const data = await res.json();
+    wanted = keep || currentGroup() || defaultGroup();  // restore may have picked the saved group while the list loaded
     if (!res.ok) throw new Error(data.error || `Could not list resource groups (the server answered ${res.status}; restart it if it is an older version).`);
     sel.replaceChildren(...data.groups.map((g) => el("option", { value: g.name }, g.location ? `${g.name} (${g.location})` : g.name)));
     sel.hidden = false;
@@ -1006,7 +1067,7 @@ async function loadGroups(keep) {
     $("rg-typed").value = wanted;
     setError(`${e.message} You can type the resource group name instead.`, null);
   }
-  $("rg-refresh").disabled = false;
+  setLoading($("rg-refresh"), false);
 }
 
 async function discover() {
@@ -1014,7 +1075,12 @@ async function discover() {
   if (!(await confirmWipe("discover", $("discover-form"), "Discover", trigger))) return;
   const group = currentGroup();
   if (!group) { setError("Enter or pick a resource group first.", null); return; }
-  const data = await call("/api/discover", { resource_group: group }, $("discover-out"), discover);
+  setLoading(trigger, true, "Discovering...");
+  stageWorking("discover", true);
+  const data = await call("/api/discover", { resource_group: group }, $("discover-out"), discover, "POST",
+    { title: `Reading ${group} from Azure`, hint: "Lists every resource and its configuration. Azure is only read. A large group can take a minute." });
+  setLoading(trigger, false);
+  stageWorking("discover", false);
   if (!data) return;
   invalidateAfter("discover");
   renderDiscover(data.resources);
@@ -1023,7 +1089,15 @@ async function discover() {
 
 async function assess() {
   if (done.assess && !(await confirmWipe("assess", $("assess-btn").parentElement, "Assess", $("assess-btn")))) return;
-  const data = await call("/api/assess", null, $("assess-out"), assess);
+  const btn = $("assess-btn");
+  const n = Object.keys(resourceByName).length;
+  setLoading(btn, true, "Assessing...");
+  stageWorking("assess", true);
+  const data = await call("/api/assess", null, $("assess-out"), assess, "POST",
+    { title: `Assessing ${n ? plural(n, "resource") : "the resources"}`,
+      hint: `${aiState ? aiLabel(aiState) : "The AI"} checks how each one maps to Leaseweb and what it needs first. This can take a few minutes.` });
+  setLoading(btn, false);
+  stageWorking("assess", false);
   if (!data) return;
   invalidateAfter("assess");
   renderAssess(data.assessments, data.message);
@@ -1043,7 +1117,7 @@ function refreshFolders() {
 
 // The server runs on this machine, so it opens the OS folder picker (Explorer, Finder, ...) and returns the path.
 async function browseFolder(input, btn) {
-  btn.disabled = true;
+  setLoading(btn, true, "Picker open...");
   try {
     const form = new FormData();
     form.append("initial", input.value.trim());
@@ -1055,7 +1129,7 @@ async function browseFolder(input, btn) {
   } catch (e) {
     setError(e.message);
   } finally {
-    btn.disabled = false;
+    setLoading(btn, false);
     input.focus();
   }
 }
@@ -1076,11 +1150,11 @@ function addFolder(value = "") {
 
 // Poll the server while plans are generated in parallel and show a progress bar.
 function startPlanProgress(out) {
-  const label = el("div", { class: "progress-label" }, "Starting...");
+  const label = el("div", { class: "progress-label" }, "Starting the AI...");
   const fill = el("div", { class: "progress-fill" });
   const bar = el("div", { class: "progress-track", role: "progressbar", "aria-label": "Plan generation progress", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }, fill);
   const list = el("div", { class: "progress-items" });
-  out.replaceChildren(el("div", { class: "progress" }, label, bar, list));
+  out.replaceChildren(el("div", { class: "progress", role: "status" }, el("div", { class: "progress-head" }, el("span", { class: "spinner", "aria-hidden": "true" }), label), bar, list));
   let stopped = false;
   const tick = async () => {
     if (stopped) return;
@@ -1107,12 +1181,14 @@ async function plan() {
   folderInputs().map((i) => i.value.trim()).filter(Boolean).forEach((v) => form.append("source_dirs", v));
   const submit = $("plan-form").querySelector("button[type=submit]");
   if (!(await confirmWipe("plan", $("plan-form"), "Generate the plan", submit))) return;
-  submit.disabled = true;
+  setLoading(submit, true, "Generating...");
+  stageWorking("plan", true);
   const pending = call("/api/plan", form, $("plan-out"), plan);
   const stop = startPlanProgress($("plan-out"));
   const data = await pending;
   stop();
-  submit.disabled = false;
+  setLoading(submit, false);
+  stageWorking("plan", false);
   if (!data) return;
   invalidateAfter("plan");
   renderPlan(data.plans, data.message);
@@ -1142,11 +1218,11 @@ function opCard(o) {
 
 async function openDetail(name, trigger) {
   setError("");
-  trigger.disabled = true;
+  setLoading(trigger, true, "Loading details...");
   let res, d;
   try { res = await fetch("/api/plan/detail?resource=" + encodeURIComponent(name)); d = await res.json(); }
-  catch (e) { trigger.disabled = false; setError("Request failed. Check the server and retry.", null); return; }
-  trigger.disabled = false;
+  catch (e) { setLoading(trigger, false); setError("Request failed. Check the server and retry.", null); return; }
+  setLoading(trigger, false);
   if (!res.ok) { setError(d.error || `Could not load the details (the server answered ${res.status}; restart it if it is an older version).`, null); return; }
   const r = d.resource;
   $("detail-type").textContent = typeName(r.type);
@@ -1180,7 +1256,7 @@ async function restore() {
   live = !!s.api_key_set;
   chainIds = s.chain || {};
   refreshMode();
-  await groupsLoaded;  // the dropdown must hold the options before a saved group can be selected
+  // Show the saved group now; loadGroups keeps it selected when the (slow) az list arrives.
   if (s.resource_group) setGroup(s.resource_group);
   (s.source_dirs || []).slice(0, MAX_FOLDERS).forEach((d, i) => { if (i === 0) folderInputs()[0].value = d; else addFolder(d); });
   let furthest = null;
@@ -1281,5 +1357,5 @@ $("next").addEventListener("click", () => {
 addFolder();
 loadAi();
 $("rg-refresh").addEventListener("click", () => loadGroups());
-groupsLoaded = loadGroups();
+loadGroups();
 restore();
