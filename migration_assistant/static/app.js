@@ -1056,7 +1056,7 @@ async function loadGroups(keep) {
     const data = await res.json();
     wanted = keep || currentGroup() || defaultGroup();  // restore may have picked the saved group while the list loaded
     if (!res.ok) throw new Error(data.error || `Could not list resource groups (the server answered ${res.status}; restart it if it is an older version).`);
-    sel.replaceChildren(...data.groups.map((g) => el("option", { value: g.name }, g.location ? `${g.name} (${g.location})` : g.name)));
+    sel.replaceChildren(...data.groups.map((g) => el("option", { value: g.name }, g.location ? `${g.name} (${PortalLib.locationName(g.location)})` : g.name)));
     sel.hidden = false;
     $("rg-typed").hidden = true;
     setGroup(data.groups.some((g) => g.name === wanted) ? wanted : data.groups.some((g) => g.name === data.default) ? data.default : wanted);
