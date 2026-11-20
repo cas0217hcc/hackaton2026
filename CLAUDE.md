@@ -8,7 +8,7 @@ Hackathon project (Hackathon Portugal 2026, InfraHack). It has two parts: a smal
 
 ## Layout
 
-- `migration_assistant/` is the tool: a FastAPI app with a plain HTML, CSS and JavaScript UI (no build step). One module per stage: `azure_discovery.py` (Discover), `assess.py` (routing rules), `plan.py` (AI plans, parallel), `dryrun.py` (ordered, prefilled Leaseweb calls and the dry-run and live executors), `leaseweb_ops.py` (reads the OpenAPI specs), `llm.py` and `claude_cli.py` (AI providers: Claude Code CLI, Anthropic API, opencode), `app.py` (routes, saved state, in-memory keys).
+- `migration_assistant/` is the tool: a FastAPI app with a plain HTML, CSS and JavaScript UI (no build step). One module per stage: `azure_discovery.py` (Discover), `assess.py` (routing rules), `plan.py` (AI plans, parallel), `dryrun.py` (ordered, prefilled Leaseweb calls, the dry-run and live executors, teardown and the curl export), `diffcheck.py` (`git apply --check` on AI diffs), `cloudinit.py` (userData for rebuilt services), `costs.py` (price estimate), `datamove.py` (data copy commands), `leaseweb_ops.py` (reads the OpenAPI specs), `llm.py` and `claude_cli.py` (AI providers: Claude Code CLI, Anthropic API, opencode), `app.py` (routes, saved state, in-memory keys).
 - `tests/` has the tests for it. `sample_app/` is a tiny app used as a code-analysis input. `start.sh`, `start.ps1` and `start.bat` start the server.
 - `demo_app/` is the source workload on Azure. `demo_app/README.md` has the API table, security model and deploy details.
 - `leaseweb-api/` is a vendored copy of the official Leaseweb OpenAPI definitions (publicCloud, privateNetworks, objectStorage). It holds `openapi.yaml` plus `paths/` and `components/` linked by `$ref`, and generated `code_samples/`. Treat it as read-only reference. The auth header is `X-LSW-Auth`.
@@ -17,6 +17,7 @@ Hackathon project (Hackathon Portugal 2026, InfraHack). It has two parts: a smal
 
 - Run: `./start.sh` (Linux and macOS) or `start.bat` (Windows). Tests: `python3 -m pytest` from the repo root. Add `--reload` to the start script while developing, because the server does not pick up new routes otherwise.
 - Every Leaseweb operation the app shows or sends must exist in `leaseweb-api/` (`leaseweb_ops.py` reads the specs). An operation an AI invents is dropped. Calls still holding a placeholder value are never sent.
+- Non-GET requests with a foreign `Origin`, and any request whose `Host` is not localhost, an IP or in `ALLOWED_HOSTS`, are refused (middleware in `app.py`): the app can send live calls, so keep that check.
 - Secrets (the Leaseweb key and the Anthropic key) live in server memory only. They must never be saved to `data/state.json`, returned by an endpoint or put in an export. Saved results go to `data/state.json` (git-ignored).
 - The `az` runner, the AI function and the HTTP client are injected into the modules, so tests run with fakes and without Azure, an AI or Leaseweb. Keep new I/O injectable.
 - The UI is plain JavaScript in `static/`. `diff.js` is pure (loadable from Node) and has Node-based tests; a test guards `app.js` against duplicate function names, which silently override each other in the browser.

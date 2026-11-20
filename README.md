@@ -23,8 +23,8 @@ The app is a guided flow of four stages.
 |---|---|
 | **1. Discover** | Reads the resources of an Azure resource group with the `az` CLI, including each resource's configured values (VM size, SKU, address space and so on). Azure is only read, never changed. |
 | **2. Assess** | Labels every resource **Direct** (maps cleanly to Leaseweb), **Rebuild** (no equivalent) or **Included** (part of another resource). It also finds which resources must exist before another can be created (see [Dependencies](#dependencies-between-resources)). The table can be filtered by route and searched. |
-| **3. Manual migration** | For each Rebuild resource, an AI writes a Leaseweb infrastructure proposal with migration steps and the Leaseweb operations involved. If you give it source folders (up to 5), it also proposes code changes as diffs, for example replacing the Key Vault SDK with a Vault client. Plans are generated in parallel with a progress bar. |
-| **4. Automatic migration** | Lists the Leaseweb API calls that migrate the Direct resources, ordered by the dependencies found at Assess, with the values prefilled from what Discover found. It runs as a **dry run** by default. With a Leaseweb API key set, it sends the calls for real. |
+| **3. Manual migration** | For each Rebuild resource, an AI writes a Leaseweb infrastructure proposal with migration steps and the Leaseweb operations involved. If you give it source folders (up to 5), it also proposes code changes as diffs, for example replacing the Key Vault SDK with a Vault client. Each diff is checked with `git apply --check` against your source and marked **Applies cleanly** or **Does not apply**, and all of them download as one `.patch`. Plans are generated in parallel with a progress bar. |
+| **4. Automatic migration** | Lists the Leaseweb API calls that migrate the Direct resources, plus the instance that hosts each Rebuild resource (with a starting-point cloud-init that installs Vault, MongoDB, RabbitMQ and so on), ordered by the dependencies found at Assess, with the values prefilled from what Discover found. It runs as a **dry run** by default. With a Leaseweb API key set, it sends the calls for real, and can remove what it created. Below the calls are a monthly compute cost estimate and the commands that copy the data itself. |
 
 ### How resources are classified
 
@@ -32,15 +32,20 @@ The app is a guided flow of four stages.
 |---|---|---|
 | Virtual machine | Direct | Public Cloud instance (`launchInstance`) |
 | Network security group | Direct | Security group and firewall rules |
-| Storage account | Direct | Object Storage bucket |
+| Storage account with blobs only | Direct | Object Storage bucket |
+| Storage account with queues, tables or file shares | Rebuild | Object Storage for the blobs, plus RabbitMQ (for queues) or other services on an instance |
 | Virtual network | Direct | Private network |
 | Network interface, managed disk, public IP | Included | Part of their VM (or private endpoint); nothing to migrate separately |
+| App Service plan | Included | Part of the app that runs on it |
+| Managed identity | Included | Replaced by credentials stored in Vault |
+| Private endpoint, private DNS zone and its links | Included | Part of the private network |
 | Key Vault | Rebuild | HashiCorp Vault on a Public Cloud instance |
 | App Service / Functions | Rebuild | App on a Public Cloud instance |
 | Cosmos DB | Rebuild | Self-hosted MongoDB on a Public Cloud instance |
 | Service Bus | Rebuild | Self-hosted RabbitMQ on a Public Cloud instance |
 | Azure SQL | Rebuild | Self-hosted database on a Public Cloud instance |
-| Anything else | decided by the AI | |
+| Log Analytics, Application Insights | Rebuild | Grafana with Loki and Prometheus on an instance |
+| Anything else | decided by the AI (one question per type, asked in parallel) | |
 
 ### Dependencies between resources
 
@@ -82,6 +87,8 @@ python3 -m uvicorn migration_assistant.app:app
 ```
 
 Open <http://127.0.0.1:8000>. The server binds to localhost only. It is a single-user tool and has no login, so do not expose it to a network.
+
+Because it can send live Leaseweb calls, the app refuses changing requests that come from another site's page (it checks `Origin`), and it only answers to `localhost` or an IP address in the `Host` header, which blocks DNS-rebinding pages. To open it by another name, list that name in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=devbox.lan`.
 
 ### First run
 
@@ -126,6 +133,12 @@ Each call shows the Leaseweb operation, the Azure resource it is for, and one la
 - Calls run in dependency order (the Needs first links from Assess, then the IDs calls need from each other). The ID a call returns (an instance, a security group, a private network) is filled into the later calls that need it, and the Status column says where each ID comes from.
 - **Run** on a row runs just that call, and the remembered IDs carry over between runs. **Run dry-run migration** (or **Run LIVE migration**) runs every call that has not been sent yet.
 - A value you must supply yourself is marked with `*`. For example, bucket creation needs the ID of an existing Object Storage product from your Leaseweb account.
+- **Rebuild resources get their instance too.** For each Rebuild resource with a plan, the instance (and bucket) its plan needs is added, with a `userData` cloud-init that installs the replacement. The script is a starting point: review it before a live run.
+- **Waiting for instances.** In a live run, a launched instance is polled until it is `RUNNING` (up to 10 minutes) before the calls that attach it to a network or security group. If it fails or does not come up, those calls are skipped.
+- **Removing what was created.** In live mode, **Remove what this migration created** deletes the instances, buckets, security groups and private networks made by live calls, newest first, after a confirmation. The list is kept in server memory, so it is lost when the server stops.
+- **Cost estimate.** A monthly compute estimate for the instances, priced live from your account when a key is set (otherwise from the spec examples, which cover only some types), next to the Azure VMs' Linux pay-as-you-go price from the public Azure Retail Prices API (only the VM size and region are sent). Storage, traffic and licences are not included.
+- **Data migration.** The commands that copy the data: `rclone` for blobs, a Cosmos DB export into `mongoimport`, a Key Vault to Vault pipe, and notes for queues and SQL. They are for you to run; the app never runs them.
+- **Exports.** **Download as curl script** gives a bash script that sends the calls with `curl` and `jq`, chaining IDs through shell variables and reading the key from `LSW_API_KEY`. **Download as JSON** gives the calls as data. **Export plan** (Markdown) now includes the data migration steps.
 
 ## Architecture
 
@@ -138,13 +151,17 @@ Browser ── FastAPI app ──┬── az CLI ........ Azure (read-only)
 
 | Module | Role |
 |---|---|
-| `azure_discovery.py` | Lists a resource group and fetches each resource's configuration. Sensitive values (passwords, keys, connection strings) are redacted. |
+| `azure_discovery.py` | Lists a resource group and fetches each resource's configuration, plus the containers, queues, tables and shares of storage accounts. Sensitive values (passwords, keys, connection strings, and name/value settings whose name looks secret) are redacted. |
 | `assess.py` | The routing rules, and AI classification of unknown types. |
 | `dependencies.py` | Finds which resources must exist before another: links in configurations plus AI-suggested links, checked for unknown names and cycles. |
-| `plan.py` | Builds plans in parallel; reads Python source folders; validates operations against the specs. |
-| `dryrun.py` | Builds the prefilled calls and orders them by dependency; runs them through the dry-run or the live executor; chains returned IDs. |
+| `plan.py` | Builds plans in parallel; reads source folders (code and manifests, skipping `.venv`, `node_modules` and the like); for large sources, first asks which files matter to each resource; validates operations against the specs. |
+| `diffcheck.py` | Checks each code change with `git apply --check` and builds the `.patch` download. |
+| `cloudinit.py` | The starting-point cloud-init for each kind of rebuilt service. |
+| `costs.py` | Leaseweb instance prices and Azure VM prices for the cost estimate. |
+| `datamove.py` | The data migration commands. |
+| `dryrun.py` | Builds the prefilled calls and orders them by dependency; runs them through the dry-run or the live executor; chains returned IDs; waits for instances; records and removes what live calls created; writes the curl script. |
 | `leaseweb_ops.py` | Reads operation IDs, methods, paths and allowed values from the OpenAPI specs. |
-| `llm.py`, `claude_cli.py` | The AI providers behind one `ask(prompt) -> dict` function. |
+| `llm.py`, `claude_cli.py` | The AI providers behind one `ask(prompt) -> dict` function, which retries once when an answer is not valid JSON. |
 | `app.py` | The FastAPI routes, the saved state and the in-memory keys. |
 | `templates/`, `static/` | The UI. Plain HTML, CSS and JavaScript, with no build step. |
 
@@ -172,7 +189,9 @@ The design and the implementation plan are in `docs/superpowers/`.
 - **Regions are approximate.** The Azure to Leaseweb region table is a nearest-location guess covering common regions. Unknown locations keep the Amsterdam default.
 - **Dependencies are best effort.** Configuration links are certain, but AI-suggested ones can be wrong or incomplete. A missing link means a call may run too early.
 - **Resource types.** Only the types in the table above have rules. Others are classified by the AI and should be reviewed.
-- **Python source only.** Code analysis reads `.py` files, up to about 200 KB in total across the chosen folders.
+- **Source size.** Code analysis reads code and manifest files (Python, JavaScript and TypeScript, Terraform, shell, YAML, `requirements.txt`, `package.json`), up to about 200 KB in total across the chosen folders. Files over 60 KB and files that often hold secrets (`.env`, `*.tfvars`, `local.settings.json`) are skipped.
+- **Container Apps and container registries** have no rule and are classified by the AI.
+- **Cost and data steps are estimates and templates.** Prices exclude storage and traffic; the data commands need values filled in and should be tried on a copy first.
 - **Single user, local.** There is no authentication, and state is shared by all browser tabs.
 - **AI output needs review.** Plans and code diffs are AI-generated suggestions, not verified migrations.
 

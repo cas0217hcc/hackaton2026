@@ -75,7 +75,7 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Get-Comma
     Write-Warning 'No AI provider found (claude, opencode or ANTHROPIC_API_KEY). Choose one with the AI button in the app.'
 }
 if ($BindHost -notin @('127.0.0.1', 'localhost', '::1')) {
-    Write-Warning "Listening on $BindHost. The app has no login, so only do this on a network you trust."
+    Write-Warning "Listening on $BindHost. The app has no login, so only do this on a network you trust. Open it by IP, or list its host name in ALLOWED_HOSTS."
 }
 
 Write-Host "Starting on http://${BindHost}:$Port  (Ctrl+C to stop)"

@@ -18,6 +18,8 @@ Usage: ./start.sh [--host HOST] [--port PORT] [--reload]
   -h, --help    show this help
 
 AI_PROVIDER, AI_MODEL and ANTHROPIC_API_KEY are passed through to the app.
+ALLOWED_HOSTS (comma-separated host names) lets the app be opened by a name other than
+localhost or an IP address, for example ALLOWED_HOSTS=devbox.lan.
 USAGE
 }
 
@@ -65,7 +67,7 @@ command -v az >/dev/null 2>&1 || echo "Note: 'az' was not found. Discover needs 
 if ! command -v claude >/dev/null 2>&1 && ! command -v opencode >/dev/null 2>&1 && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "Note: no AI provider found (claude, opencode or ANTHROPIC_API_KEY). Choose one with the AI button in the app." >&2
 fi
-case "$HOST" in 127.0.0.1|localhost|::1) ;; *) echo "Warning: listening on $HOST. The app has no login, so only do this on a network you trust." >&2 ;; esac
+case "$HOST" in 127.0.0.1|localhost|::1) ;; *) echo "Warning: listening on $HOST. The app has no login, so only do this on a network you trust. Open it by IP, or list its host name in ALLOWED_HOSTS." >&2 ;; esac
 
 echo "Starting on http://$HOST:$PORT  (Ctrl+C to stop)"
 exec .venv/bin/python -m uvicorn migration_assistant.app:app --host "$HOST" --port "$PORT" ${RELOAD[@]+"${RELOAD[@]}"}

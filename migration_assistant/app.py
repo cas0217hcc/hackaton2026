@@ -1,7 +1,9 @@
+import ipaddress
 import json
 import os
 import re
 import threading
+from urllib.parse import urlsplit
 
 import httpx
 from dataclasses import asdict, is_dataclass
@@ -9,7 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, Form
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -21,10 +23,14 @@ from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
 from .llm import DEFAULT_API_MODEL, AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
 from .folder_picker import FolderPickerError, pick_folder as default_pick_folder
-from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
+from .costs import azure_vm_prices, leaseweb_prices
+from .datamove import data_steps
+from .diffcheck import check_plans, patch_text
+from .dryrun import (BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, curl_script, path_matches,
+                     run_calls, teardown_calls)
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
-from .plan import FAILED_PREFIX, build_plans, read_sources
+from .plan import FAILED_PREFIX, SELECT_ABOVE, build_plans, read_sources, select_sources
 
 HERE = Path(__file__).parent
 DEFAULT_RG = "hackaton-2026-rg"
@@ -62,17 +68,63 @@ def _load(path: Path | None) -> dict:
     return state
 
 
+LOCAL_NAMES = {"localhost", "testserver"}  # testserver: what Starlette's TestClient sends
+
+
+def _hostname(netloc: str) -> str:
+    return (urlsplit("//" + netloc).hostname or "").lower()
+
+
+def host_allowed(host_header: str, extra: set[str] | None = None) -> bool:
+    """Only IP literals, localhost and names from ALLOWED_HOSTS. A DNS-rebinding page arrives with
+    its own domain name in Host, so it is refused even though it reached this server."""
+    name = _hostname(host_header)
+    if not name:
+        return False
+    if name in LOCAL_NAMES or name in (extra or set()):
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
+
+
+def origin_allowed(origin: str | None, host_header: str) -> bool:
+    """A browser names the page that sent a request in Origin. Changing requests are only accepted from
+    this app's own pages (or from clients that send no Origin, such as curl and the tests)."""
+    if not origin:
+        return True
+    parts = urlsplit(origin)
+    return bool(parts.netloc) and parts.netloc.lower() == host_header.lower()
+
+
 def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask,
                models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups,
-               pick_folder: Callable = default_pick_folder) -> FastAPI:
+               pick_folder: Callable = default_pick_folder, git_runner: Callable | None = None,
+               wait_timeout: float = 600) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
+    extra_hosts = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
+
+    @app.middleware("http")
+    async def same_origin_only(request: Request, call_next):
+        # The app has no login and can send live Leaseweb calls, so another site open in the same browser
+        # must not be able to drive it (cross-site form posts) or read it (DNS rebinding).
+        host = request.headers.get("host", "")
+        if not host_allowed(host, extra_hosts):
+            return JSONResponse({"error": "Host not allowed. Add it to ALLOWED_HOSTS to use this name."}, status_code=403)
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_allowed(request.headers.get("origin"), host):
+            return JSONResponse({"error": "Cross-site request refused."}, status_code=403)
+        return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     state = _load(state_file)
     progress: dict = {"running": False, "items": []}  # live status of the current plan run
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
+    created: list[dict] = []  # what live calls created, newest last, so it can be torn down (memory only)
     ai = AiSettings(provider=os.environ.get("AI_PROVIDER", "claude-cli"), model=os.environ.get("AI_MODEL", ""))
     # The provider and model are remembered next to the saved results; the API key never is.
     ai_file = state_file.parent / "ai.json" if state_file is not None else None
@@ -92,11 +144,17 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     ops = load_operations()
     launch_options = load_launch_options()
 
+    save_lock = threading.Lock()
+    client = http if http is not None else httpx.Client()  # one connection pool for every Leaseweb request
+
     def save() -> None:
         if state_file is None:
             return
         state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(json.dumps(_dump(state)))
+        with save_lock:  # write a temp file, then swap it in: a crash mid-write never leaves half a file
+            tmp = state_file.with_name(state_file.name + ".tmp")
+            tmp.write_text(json.dumps(_dump(state)))
+            os.replace(tmp, state_file)
 
     def error(message: str, status: int = 502):
         return JSONResponse({"error": message}, status_code=status)
@@ -109,7 +167,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "chain": dict(chain)}
+        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/key")
     def api_set_key(api_key: str = Form("")):
@@ -129,6 +187,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         state.clear()
         state.update(_empty_state())
         chain.clear()
+        created.clear()
         if state_file is not None:
             state_file.unlink(missing_ok=True)
         return _dump(state)
@@ -196,17 +255,23 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                         item["status"] = status
 
         with progress_lock:
+            if progress["running"]:
+                return error("A plan is already being generated. Wait for it to finish.", 409)
             progress["running"] = True
             progress["items"] = [{"name": a.resource_name, "status": "pending"} for a in rebuild]
+        items = [(a, by_name[a.resource_name]) for a in rebuild]
         try:
-            plans = build_plans([(a, by_name[a.resource_name]) for a in rebuild], source, ask=ask_ai, ops=ops,
-                                on_progress=on_progress)
+            per_resource = (select_sources(items, source, ask=ask_ai)
+                            if sum(map(len, source.values())) > SELECT_ABOVE and len(source) > 3 else None)
+            plans = build_plans(items, source, ask=ask_ai, ops=ops, on_progress=on_progress, per_resource=per_resource)
         finally:
             with progress_lock:
                 progress["running"] = False
         failed = [p for p in plans if p.warnings and p.warnings[0].startswith(FAILED_PREFIX)]
         if len(failed) == len(plans):  # nothing usable: report the problem and allow retry
             return error(failed[0].warnings[0][len(FAILED_PREFIX):])
+        if dirs:
+            check_plans(plans, [Path(d) for d in dirs], **({"runner": git_runner} if git_runner else {}))
         state["plans"] = plans
         save()
         return {"plans": [asdict(p) for p in plans], "message": ""}
@@ -241,14 +306,16 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     def executor():
         key = secrets["api_key"]
-        return LeasewebExecutor(key, http) if key else DryRunExecutor()
+        return LeasewebExecutor(key, client, wait_timeout=wait_timeout) if key else DryRunExecutor()
+
+    def current_calls() -> list[DryRunCall]:
+        return build_calls(state["assessments"], ops, state["resources"], state["plans"])
 
     @app.get("/api/migrate/calls")
     def api_migrate_calls():
         if not state["assessments"]:
             return error("Run Assess first.", 409)
-        return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops, state["resources"])],
-                "live": bool(secrets["api_key"])}
+        return {"calls": [asdict(c) for c in current_calls()], "live": bool(secrets["api_key"])}
 
     def ai_state() -> dict:
         effective = ai.model or (DEFAULT_API_MODEL if ai.provider == "anthropic-api" else "")
@@ -305,15 +372,18 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         key = secrets["api_key"]
         if key:
             try:
-                client = http if http is not None else httpx.Client()
                 resp = client.request("GET", BASE_URL + "/publicCloud/v1/regions",
                                       headers={"X-LSW-Auth": key, "Accept": "application/json"}, timeout=15)
-                live = [{"value": r["name"], "description": r.get("location", "")} for r in resp.json()["regions"]]
-                if resp.status_code == 200 and live:
+                live = ([{"value": r["name"], "description": r.get("location", "")} for r in resp.json()["regions"]]
+                        if resp.status_code == 200 else [])
+                if live:
                     regions, source = live, "live"
             except Exception:  # any lookup problem: keep the spec list
                 pass
-        return {"options": {"launchInstance": {**launch_options, "region": regions}}, "source": source}
+        if not op_docs:
+            op_docs.update(load_operation_docs())
+        return {"options": {"launchInstance": {**launch_options, "region": regions}}, "source": source,
+                "summaries": {i: d["summary"] for i, d in op_docs.items() if d.get("summary")}}
 
     def spec_error(calls: list[DryRunCall]) -> str | None:
         """Only spec operations may be sent, with the spec's method and path shape."""
@@ -340,13 +410,13 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
             if problem:
                 return error(problem, 400)
         else:
-            prepared = build_calls(state["assessments"], ops, state["resources"])
+            prepared = current_calls()
         annotate_chain(prepared)
         state["calls"] = prepared
         save()
-        results = run_calls(prepared, executor(), chain)  # ids from earlier single runs stay usable
+        results = run_calls(prepared, executor(), chain, created)  # ids from earlier single runs stay usable
         return {"live": bool(secrets["api_key"]), "calls": [asdict(c) for c in prepared], "results": results,
-                "chain": dict(chain)}
+                "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/migrate/run-one")
     def api_migrate_run_one(call: str = Form("")):
@@ -358,8 +428,43 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         problem = spec_error(prepared)
         if problem:
             return error(problem, 400)
-        [result] = run_calls(prepared, executor(), chain)
-        return {"live": bool(secrets["api_key"]), "result": result, "chain": dict(chain)}
+        [result] = run_calls(prepared, executor(), chain, created)
+        return {"live": bool(secrets["api_key"]), "result": result, "chain": dict(chain), "created": list(created)}
+
+    @app.post("/api/migrate/teardown")
+    def api_migrate_teardown():
+        """Delete what live runs created, newest first. Live only: a dry run never created anything."""
+        key = secrets["api_key"]
+        if not key:
+            return error("Set the Leaseweb API key to remove live resources.", 409)
+        if not created:
+            return {"results": [], "created": [], "chain": dict(chain)}
+        live_exec = LeasewebExecutor(key, client)
+        results = []
+        for item, call in teardown_calls(created, ops):
+            r = live_exec.execute(call)
+            r["source"] = item.get("source", "")
+            gone = r.get("sent") and (200 <= r.get("status", 0) < 300 or r.get("status") == 404)
+            if gone:
+                created.remove(item)
+                for param, value in (item.get("params") or {}).items():
+                    if chain.get(param) == value:
+                        chain.pop(param)
+            results.append(r)
+        return {"results": results, "created": list(created), "chain": dict(chain)}
+
+    @app.get("/api/costs")
+    def api_costs(region: str = "eu-west-3"):
+        """Monthly compute estimate: Leaseweb instance prices for a region, and Azure VM prices today."""
+        if not re.fullmatch(r"[a-z]{2}-[a-z]+-\d", region):
+            return error("Unknown region.", 400)
+        lsw = leaseweb_prices(region, secrets["api_key"], client, BASE_URL)
+        return {"leaseweb": lsw, "azure": azure_vm_prices(state["resources"], client),
+                "note": "Compute only. Storage, traffic, licences and managed-service fees are not included."}
+
+    @app.get("/api/data-steps")
+    def api_data_steps():
+        return {"steps": data_steps(state["resources"], state["assessments"])}
 
     @app.get("/export", response_class=PlainTextResponse)
     def export():
@@ -377,7 +482,33 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if state["calls"]:
             lines += ["", "## Dry-run calls", ""]
             lines += [f"- {c.method} {c.path} ({c.operation_id})" for c in state["calls"]]
+        steps = data_steps(state["resources"], state["assessments"])
+        if steps:
+            lines += ["", "## Data migration", ""]
+            for d in steps:
+                lines += [f"### {d['resource']}: {d['title']}", ""]
+                if d["commands"]:
+                    lines += ["```bash", *d["commands"], "```", ""]
+                lines += [f"- {n}" for n in d["notes"]] + [""]
         return "\n".join(lines) + "\n"
+
+    def export_calls() -> list[DryRunCall]:
+        return state["calls"] or (current_calls() if state["assessments"] else [])
+
+    @app.get("/export/calls.json")
+    def export_calls_json():
+        return Response(json.dumps([asdict(c) for c in export_calls()], indent=2), media_type="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="leaseweb-calls.json"'})
+
+    @app.get("/export/calls.sh")
+    def export_calls_sh():
+        return Response(curl_script(export_calls()), media_type="text/x-shellscript",
+                        headers={"Content-Disposition": 'attachment; filename="leaseweb-calls.sh"'})
+
+    @app.get("/export/patch")
+    def export_patch():
+        return Response(patch_text(state["plans"]), media_type="text/x-diff",
+                        headers={"Content-Disposition": 'attachment; filename="migration-code-changes.patch"'})
 
     return app
 

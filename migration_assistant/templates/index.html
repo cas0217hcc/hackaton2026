@@ -141,7 +141,13 @@
         <h2 id="migrate-title">Automatic migration (dry run)</h2>
         <p id="migrate-desc">The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.</p>
       </div>
-      <div class="row"><button class="btn" id="migrate-btn">Run dry-run migration</button></div>
+      <div class="row">
+        <button class="btn" id="migrate-btn">Run dry-run migration</button>
+        <button class="btn secondary danger-outline" id="teardown-btn" type="button" hidden>Remove what this migration created</button>
+        <span class="row-spacer"></span>
+        <a class="btn secondary" href="/export/calls.sh" download="leaseweb-calls.sh" title="The calls as last run (or as prepared), as a bash script using curl. The key comes from LSW_API_KEY.">Download as curl script</a>
+        <a class="btn secondary" href="/export/calls.json" download="leaseweb-calls.json">Download as JSON</a>
+      </div>
       <div id="migrate-note" aria-live="polite"></div>
       <div id="migrate-out"></div>
     </section>

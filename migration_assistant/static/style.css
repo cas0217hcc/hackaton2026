@@ -475,3 +475,18 @@ ul.deps { margin: 2px 0 0; padding-left: 16px; font-size: 13px; }
 th[aria-sort="ascending"] .sort, th[aria-sort="descending"] .sort { color: var(--acc-dark); }
 .why.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .link.more { margin-top: 4px; font-size: 13.5px; }
+
+/* Plan toolbar actions, migrate toolbar extras */
+.plan-tools-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.row-spacer { flex: 1 1 auto; }
+.btn.secondary.danger-outline { color: var(--live); border-color: var(--live); }
+.btn.secondary.danger-outline:hover { background: var(--bad-bg); }
+
+/* Cost estimate and data migration, under the calls table */
+.extra-panel:empty { display: none; }
+.extra-panel { margin: 0 0 24px; }
+.cost-list { margin: 0 0 10px; padding-left: 20px; }
+.cost-list li { margin: 2px 0; }
+.code-block { white-space: pre-wrap; word-break: break-word; }
+.data-step .plan-body .details-row { margin-bottom: 10px; }
+.change .pill { margin-left: 8px; }

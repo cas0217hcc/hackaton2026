@@ -237,3 +237,29 @@ def test_opencode_models_report_why_the_list_is_empty():
         raise FileNotFoundError
     got = list_models("opencode", AiSettings(), runner=missing)
     assert [m["id"] for m in got["models"]] == [""] and "not found" in got["error"]
+
+
+def test_make_ask_retries_once_when_the_answer_is_not_json():
+    from migration_assistant.claude_cli import InvalidJsonError
+    prompts = []
+
+    def flaky(prompt, settings):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            raise InvalidJsonError("the AI did not return valid JSON")
+        return {"ok": True}
+
+    assert make_ask(AiSettings(provider="x"), backends={"x": flaky})("p") == {"ok": True}
+    assert len(prompts) == 2 and "could not be parsed" in prompts[1]
+
+
+def test_make_ask_does_not_retry_other_errors():
+    calls = []
+
+    def down(prompt, settings):
+        calls.append(prompt)
+        raise ClaudeError("timed out")
+
+    with pytest.raises(ClaudeError):
+        make_ask(AiSettings(provider="x"), backends={"x": down})("p")
+    assert len(calls) == 1

@@ -29,6 +29,9 @@ class CodeChange:
     file: str
     summary: str
     diff: str
+    # "applies" | "conflicts" | "unchecked" ("" until checked), from git apply --check
+    check: str = ""
+    check_note: str = ""
 
 
 @dataclass

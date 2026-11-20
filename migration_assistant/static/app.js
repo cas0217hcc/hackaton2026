@@ -274,14 +274,19 @@ function typeName(type) {
 const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
 const pill = (route) => el("span", { class: "pill " + route }, LABELS[route] || route);
 
-// A changed file: name, summary, +/- counts and a button that opens the diff viewer.
+// Result of `git apply --check` against the source folder (empty when no folder was given).
+const CHECKS = { applies: ["Applies cleanly", "direct"], conflicts: ["Does not apply", "bad"], unchecked: ["Not checked", "neutral"] };
+
+// A changed file: name, summary, +/- counts, whether it applies, and a button that opens the diff viewer.
 function changeCard(c) {
   const st = DiffLib.diffStats(c.diff);
   const view = el("button", { type: "button", class: "btn secondary", "aria-label": `View the diff of ${c.file}` }, "View diff");
   view.addEventListener("click", () => openDiff(c, view));
+  const check = CHECKS[c.check];
   return el("div", { class: "change" },
     el("div", { class: "change-main" }, el("span", { class: "id change-file" }, c.file), el("span", { class: "change-sum" }, c.summary),
-      el("span", { class: "change-stats" }, el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed))),
+      el("span", { class: "change-stats" }, el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed)),
+      ...(check ? [el("span", { class: "pill " + check[1], title: c.check_note || "" }, check[0])] : [])),
     view);
 }
 
@@ -426,6 +431,7 @@ function needsCell(a) {
 
 // Creation step per resource (0 = needs nothing), filled at Assess; plans follow the same order.
 const waveOf = {};
+const routeOf = {};  // resource name -> direct | rebuild | included, from Assess
 const stepOf = (name) => (waveOf[name] ?? Infinity);
 
 // Long reasons show four lines first, so the table stays scannable; Show more opens the rest.
@@ -443,7 +449,7 @@ function whyCell(text) {
 }
 
 function renderAssess(assessments, message = "") {
-  assessments.forEach((a) => { waveOf[a.resource_name] = a.route === "included" ? null : (a.wave ?? 0); });
+  assessments.forEach((a) => { waveOf[a.resource_name] = a.route === "included" ? null : (a.wave ?? 0); routeOf[a.resource_name] = a.route; });
   const picked = new Set();
   let query = "";
   const entries = assessments.map((a) => {
@@ -514,7 +520,9 @@ function renderPlan(plans, message) {
     });
     out.addEventListener("toggle", syncToggle, true);  // a card opened or closed by hand
     const ordered = plans.slice().sort((a, b) => compareValues(stepOf(a.resource_name), stepOf(b.resource_name)));
-    out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}, in creation order`), toggleAll), ...ordered.map((p) => {
+    const anyDiff = plans.some((p) => p.code_changes.some((c) => { const st = DiffLib.diffStats(c.diff); return st.added + st.removed > 0; }));
+    const patch = anyDiff ? el("a", { class: "btn secondary", href: "/export/patch", download: "migration-code-changes.patch" }, "Download code changes (.patch)") : "";
+    out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}, in creation order`), el("span", { class: "plan-tools-actions" }, patch, toggleAll)), ...ordered.map((p) => {
       const card = el("details", { class: "plan" },
         el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]),
           el("div", { class: "plan-title" }, el("span", { class: "plan-type" }, typeName(resourceTypes[p.resource_name] || "")), el("h3", { class: "id" }, p.resource_name)), Number.isFinite(stepOf(p.resource_name)) ? el("span", { class: "plan-step" }, `Step ${stepOf(p.resource_name) + 1}`) : "", failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
@@ -566,7 +574,7 @@ function refreshMode() {
   $("migrate-title").textContent = live ? "Automatic migration (LIVE)" : "Automatic migration (dry run)";
   $("migrate-desc").textContent = live
     ? "These Leaseweb API calls are sent in the order shown and can create billable resources. IDs from earlier responses are filled into later calls. A call that still needs values is skipped."
-    : "The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.";
+    : "The Leaseweb API calls that would migrate the direct resources, and launch the instances that host the rebuilt ones, in the order they would run. Nothing is sent.";
   refreshRows();
 }
 
@@ -608,7 +616,7 @@ function buildFields(c, idPrefix) {
       fields.push({ where: "body", key, required: false, kind: "bool", initial: String(v), choices: [{ value: "true", description: "" }, { value: "false", description: "" }], hint: "" });
     } else if (typeof v === "string") {
       const ph = PLACEHOLDER.test(v);
-      fields.push({ where: "body", key, required: ph, kind: "string", initial: ph ? "" : v, hint: ph ? v.match(PLACEHOLDER)[1] : "", original: v });
+      fields.push({ where: "body", key, required: ph, kind: "string", initial: ph ? "" : v, hint: ph ? v.match(PLACEHOLDER)[1] : "", original: v, multiline: v.includes("\n") });
     } else if (typeof v === "number") {
       fields.push({ where: "body", key, required: false, kind: "number", initial: String(v), hint: "" });
     } else {
@@ -621,11 +629,12 @@ function buildFields(c, idPrefix) {
     if (f.kind === "select" || f.kind === "bool") {
       f.input = el("select", attrs, ...f.choices.map((o) => el("option", { value: o.value }, o.description ? `${o.value} - ${o.description}` : o.value)));
     } else {
-      f.input = f.kind === "json" ? el("textarea", { ...attrs, rows: "4" }) : el("input", { ...attrs, placeholder: f.hint });
+      // An <input> drops newlines, so multi-line values (cloud-init) get a text area.
+      f.input = f.kind === "json" || f.multiline ? el("textarea", { ...attrs, rows: f.multiline ? "8" : "4" }) : el("input", { ...attrs, placeholder: f.hint });
     }
     f.input.value = f.initial;
     if (f.required) f.input.setAttribute("aria-required", "true");
-    f.help = f.where === "path" ? PARAM_HELP[f.key] || "" : "";
+    f.help = (f.where === "path" ? PARAM_HELP : BODY_HELP)[f.key] || "";
   });
   return fields;
 }
@@ -633,6 +642,9 @@ function buildFields(c, idPrefix) {
 // Where to find a value the tool cannot know.
 const PARAM_HELP = {
   objectStorageId: "ID of an Object Storage product in your Leaseweb account. Order one in the Leaseweb portal if you have none.",
+};
+const BODY_HELP = {
+  userData: "cloud-init that installs the replacement service on first boot. A starting point: review it before a live run.",
 };
 
 const missingField = (f) => (f.kind === "json" ? PLACEHOLDER.test(f.input.value) : f.required && !f.input.value.trim());
@@ -711,6 +723,7 @@ function refreshRows() {
     updateRowStatus(r, plan[i]);
   });
   $("migrate-btn").disabled = busy;
+  refreshTeardown();
 }
 
 const rowLabel = (row) => `${row.index + 1}. ${row.operation_id}${row.source ? " for " + row.source : ""}`;
@@ -737,24 +750,109 @@ function renderMigrate(calls) {
     const status = el("td", { class: "status", "aria-live": "polite" });
     const runBtn = el("button", { type: "button", class: "btn secondary row-run", "aria-label": `Run call ${i + 1}: ${c.operation_id}` }, "Run");
     const source = c.source
-      ? el("div", { class: "call-source" }, icon(resourceTypes[c.source], resourceKinds[c.source]), el("span", {}, "for ", el("span", { class: "id" }, c.source)))
+      ? el("div", { class: "call-source" }, icon(resourceTypes[c.source], resourceKinds[c.source]), el("span", {}, "for ", el("span", { class: "id" }, c.source)),
+          ...(routeOf[c.source] === "rebuild" ? [el("span", { class: "pill rebuild" }, "Rebuild")] : []))
       : "";
+    const summary = ((optionsCache && optionsCache.summaries) || {})[c.operation_id];
     const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)),
-      el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`), source),
+      el("td", {}, summary ? el("div", { class: "op" }, summary) : el("div", { class: "op code" }, c.operation_id),
+        el("div", { class: "call code" }, `${summary ? c.operation_id + "  " : ""}${c.method} ${c.path}`), source),
       el("td", {}, values), status, el("td", { class: "run-cell" }, runBtn));
     const row = { tr, status, runBtn, index: i, method: c.method, operation_id: c.operation_id, source: c.source || "", chained: c.chained || {},
       pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false, sent: false };
     fields.forEach((f) => {
       ["input", "change"].forEach((ev) => f.input.addEventListener(ev, () => { row.ran = false; row.sent = false; row.dirty = true; refreshRows(); }));
+      if (f.key === "region" || f.key === "type") f.input.addEventListener("change", renderCosts);
       if (f.input.tagName === "INPUT") f.input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runRow(row); } });
     });
     runBtn.addEventListener("click", () => runRow(row));
     migrateRows.push(row);
     return tr;
   });
-  out.replaceChildren(table(["Order", "Call", "Values", "Status", "Run"], rows));
+  out.replaceChildren(table(["Order", "Call", "Values", "Status", "Run"], rows),
+    el("section", { id: "cost-panel", class: "extra-panel", "aria-live": "polite" }),
+    el("section", { id: "data-panel", class: "extra-panel" }));
   done.migrate = false;
   refreshRows();
+  renderCosts();
+  renderDataSteps();
+}
+
+// ---- cost estimate: the instances this migration launches, against the Azure VMs running today
+const priceCache = {};  // region -> /api/costs answer (or null when it failed)
+const money = (n) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function loadPrices(region) {
+  if (!(region in priceCache)) {
+    try {
+      const res = await fetch("/api/costs?region=" + encodeURIComponent(region));
+      priceCache[region] = res.ok ? await res.json() : null;
+    } catch (e) { priceCache[region] = null; }
+  }
+  return priceCache[region];
+}
+
+function rowValue(row, key) {
+  const f = row.fields.find((x) => x.key === key && x.where === "body");
+  return f ? f.input.value : String(row.baseBody[key] ?? "");
+}
+
+async function renderCosts() {
+  const box = $("cost-panel");
+  if (!box) return;
+  const launches = migrateRows.filter((r) => r.operation_id === "launchInstance");
+  if (!launches.length) { box.replaceChildren(); return; }
+  const regions = [...new Set(launches.map((r) => rowValue(r, "region")))];
+  const prices = {};
+  for (const region of regions) prices[region] = await loadPrices(region);
+  let total = 0, unknown = 0;
+  const items = launches.map((r) => {
+    const region = rowValue(r, "region"), type = rowValue(r, "type");
+    const p = prices[region] && prices[region].leaseweb.types[type];
+    if (p) total += p.monthly; else unknown += 1;
+    return el("li", {}, el("span", { class: "id" }, r.source || `call ${r.index + 1}`), `: ${type} in ${region}, `,
+      p ? el("b", {}, `${money(p.monthly)} / month`) : el("span", { class: "sub" }, "price not known"));
+  });
+  const any = Object.values(prices).find(Boolean);
+  const azure = any ? Object.entries(any.azure || {}) : [];
+  const azureTotal = azure.reduce((s, [, v]) => s + v.monthly, 0);
+  const source = Object.values(prices).some((p) => p && p.leaseweb.source === "live") ? "live from your account"
+    : "from the API spec examples, which cover only some instance types; set a key for live prices";
+  box.replaceChildren(
+    el("h3", { class: "detail-h" }, "Estimated monthly compute cost"),
+    el("p", { class: "run-summary" }, `Leaseweb: ${money(total)} / month for ${plural(launches.length - unknown, "instance")}`
+      + (unknown ? ` (${unknown} without a known price)` : "")
+      + (azure.length ? `. Azure VMs today: EUR ${money(azureTotal)} / month for ${plural(azure.length, "VM")}.` : ".")),
+    el("ul", { class: "cost-list" }, ...items,
+      ...azure.map(([name, v]) => el("li", {}, el("span", { class: "id" }, name), `: Azure ${v.size} in ${v.region}, EUR ${money(v.monthly)} / month`))),
+    el("p", { class: "note" }, `${(any && any.note) || "Compute only."} Leaseweb prices are in your account's currency (${source}). `
+      + "Azure prices are Linux pay-as-you-go list prices."));
+}
+
+// ---- data migration: commands that copy what is inside the resources, for a person to run
+async function renderDataSteps() {
+  const box = $("data-panel");
+  if (!box) return;
+  let steps = [];
+  try { steps = (await (await fetch("/api/data-steps")).json()).steps || []; } catch (e) { return; }
+  if (!steps.length) { box.replaceChildren(); return; }
+  box.replaceChildren(
+    el("h3", { class: "detail-h" }, "Data migration"),
+    el("p", { class: "note" }, "The calls above create empty resources. Run these yourself to copy the data once the Leaseweb side exists. Fill in the <values> first."),
+    ...steps.map((d) => {
+      const code = d.commands.join("\n\n");
+      const copy = el("button", { type: "button", class: "btn secondary" }, "Copy commands");
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(code); copy.textContent = "Copied"; } catch (e) { copy.textContent = "Copy failed"; }
+        setTimeout(() => { copy.textContent = "Copy commands"; }, 2000);
+      });
+      return el("details", { class: "plan data-step" },
+        el("summary", { class: "plan-head" }, icon(d.type, resourceKinds[d.resource]),
+          el("div", { class: "plan-title" }, el("span", { class: "plan-type" }, d.title), el("h3", { class: "id" }, d.resource)), el("span", { class: "chev", "aria-hidden": "true" })),
+        el("div", { class: "plan-body" },
+          ...(d.commands.length ? [el("pre", { class: "code-block" }, code), el("div", { class: "details-row" }, copy)] : []),
+          el("ul", { class: "steps-list" }, ...d.notes.map((n) => el("li", {}, n)))));
+    }));
 }
 
 function showResult(row, r) {
@@ -768,7 +866,57 @@ function showResult(row, r) {
     pillEl = el("span", { class: "pill " + (r.status < 400 ? "direct" : "bad") }, `Sent ${r.status}`);
     note = typeof r.response === "string" ? r.response : JSON.stringify(r.response).slice(0, 240);
   }
-  row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note));
+  row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note),
+    ...(r.ready_error ? [el("div", { class: "status-note" }, `Not ready: ${r.ready_error}. The calls that need it were skipped.`)] : []));
+}
+
+// ---- teardown: remove what live calls created (kept in server memory, lost on restart)
+let createdItems = [];
+
+function setCreated(list) {
+  createdItems = list || [];
+  refreshTeardown();
+}
+
+function refreshTeardown() {
+  const btn = $("teardown-btn");
+  btn.hidden = !(live && createdItems.length);
+  btn.textContent = `Remove what this migration created (${createdItems.length})`;
+  btn.disabled = busy;
+}
+
+const createdLabel = (c) => `${c.operation_id} for ${c.source || "?"} (${Object.entries(c.params || {}).map(([k, v]) => `${k} ${v}`).join(", ")})`;
+
+async function teardown() {
+  if (busy || !createdItems.length) return;
+  const btn = $("teardown-btn");
+  const note = $("migrate-note");
+  const ok = await askInline((p) => { note.replaceChildren(p); return p; }, {
+    message: `Delete ${plural(createdItems.length, "resource")} from your Leaseweb account? This cannot be undone.`,
+    details: createdItems.slice().reverse().map((c) => el("span", {}, el("b", {}, "Delete "), createdLabel(c))),
+    confirmLabel: "Delete them", danger: true, returnFocus: btn });
+  if (!ok) return;
+  setError("");
+  setBusy(true);
+  btn.classList.add("loading");
+  let res, data;
+  try {
+    res = await fetch("/api/migrate/teardown", { method: "POST" });
+    data = await res.json();
+  } catch (e) { res = null; }
+  btn.classList.remove("loading");
+  busy = false;
+  if (!res || !res.ok) { setBusy(false); setError((data && data.error) || "Teardown failed. Check the server and retry.", teardown); return; }
+  setChain(data.chain);
+  setCreated(data.created);
+  const failed = data.results.filter((r) => !(r.sent && (r.status < 300 || r.status === 404)));
+  note.replaceChildren(el("p", { class: "run-summary" + (failed.length ? " bad" : "") },
+    `Removed ${plural(data.results.length - failed.length, "resource")}` + (failed.length
+      ? `. ${failed.length} could not be removed yet (an instance that is still shutting down can block its network): `
+        + failed.map((r) => `${r.operation_id} for ${r.source}: ${r.error || r.reason || "HTTP " + r.status}`).join("; ") + ". Try again in a minute."
+      : ".")));
+  migrateRows.forEach((r) => { r.sent = false; });
+  refreshRows();
 }
 
 // Errors that belong to one row are shown in that row, not in the page banner.
@@ -822,6 +970,7 @@ async function runRow(row) {
   showResult(row, data.result);
   busy = false;
   setChain(data.chain);
+  setCreated(data.created);
   syncLive(data.live);
 }
 
@@ -881,6 +1030,7 @@ async function migrate() {
   data.results.forEach((r, i) => showResult(todo[i].row, r));
   busy = false;
   setChain(data.chain);
+  setCreated(data.created);
   refreshMode();
   syncLive(data.live);
   const ok = data.results.filter((r) => r.sent && r.status < 300).length;
@@ -1255,6 +1405,7 @@ async function restore() {
   try { s = await (await fetch("/api/state")).json(); } catch (e) { return; }
   live = !!s.api_key_set;
   chainIds = s.chain || {};
+  createdItems = s.created || [];
   refreshMode();
   // Show the saved group now; loadGroups keeps it selected when the (slow) az list arrives.
   if (s.resource_group) setGroup(s.resource_group);
@@ -1294,6 +1445,7 @@ async function resetAll() {
   addFolder();
   migrateRows = [];
   chainIds = {};
+  setCreated([]);
   $("migrate-note").replaceChildren();
   $("restored").hidden = true;
   show("discover");
@@ -1310,6 +1462,7 @@ $("plan-form").addEventListener("submit", (e) => { e.preventDefault(); plan(); }
 $("reset-btn").addEventListener("click", resetAll);
 $("assess-btn").addEventListener("click", assess);
 $("migrate-btn").addEventListener("click", migrate);
+$("teardown-btn").addEventListener("click", teardown);
 $("ai-btn").addEventListener("click", () => {
   const bar = $("aibar");
   bar.hidden = !bar.hidden;

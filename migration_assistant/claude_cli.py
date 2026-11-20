@@ -8,6 +8,10 @@ class ClaudeError(Exception):
     """Any problem getting an answer from an AI provider (name kept for the Claude Code backend)."""
 
 
+class InvalidJsonError(ClaudeError):
+    """The AI answered, but no JSON object could be found in the answer."""
+
+
 JSON_ONLY = "\n\nAnswer with a single JSON object only, no prose."
 
 
@@ -24,7 +28,7 @@ def parse_json(text: str) -> dict:
             continue
         if isinstance(data, dict):
             return data
-    raise ClaudeError("the AI did not return valid JSON")
+    raise InvalidJsonError("the AI did not return valid JSON")
 
 
 MODEL_RE = re.compile(r"(opus|sonnet|haiku|claude-[A-Za-z0-9][\w.\-\[\]]*)")

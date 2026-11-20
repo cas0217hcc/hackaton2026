@@ -132,3 +132,24 @@ def test_prompt_tells_the_ai_to_list_only_files_that_change():
         return {"proposal": "x", "lw_operations": [], "code_changes": []}
     build_plan(KV, KV_RES, {"a.py": "x"}, ask=ask, ops={})
     assert "Only list files that need a change" in seen[0]
+
+
+def test_read_source_skips_dependency_folders_and_reads_more_languages(tmp_path: Path):
+    (tmp_path / ".venv" / "lib").mkdir(parents=True)
+    (tmp_path / ".venv" / "lib" / "big.py").write_text("x = 1")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dep.js").write_text("y")
+    (tmp_path / "ui").mkdir()
+    (tmp_path / "ui" / "App.jsx").write_text("export default 1")
+    (tmp_path / "main.tf").write_text("resource {}")
+    (tmp_path / "requirements.txt").write_text("fastapi")
+    (tmp_path / ".env").write_text("SECRET=1")
+    (tmp_path / "prod.tfvars").write_text("key = 1")
+    assert read_source(tmp_path) == {"main.tf": "resource {}", "requirements.txt": "fastapi", "ui/App.jsx": "export default 1"}
+
+
+def test_read_source_skips_a_file_over_budget_but_keeps_scanning(tmp_path: Path):
+    (tmp_path / "a.py").write_text("a" * 50)
+    (tmp_path / "b.py").write_text("b" * 500)
+    (tmp_path / "c.py").write_text("c" * 10)
+    assert set(read_source(tmp_path, max_bytes=100)) == {"a.py", "c.py"}

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .claude_cli import JSON_ONLY, ClaudeError, ask_json, parse_json
+from .claude_cli import JSON_ONLY, ClaudeError, InvalidJsonError, ask_json, parse_json
 
 DEFAULT_API_MODEL = "claude-opus-5-5"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -93,6 +93,10 @@ BACKENDS: dict[str, Callable[[str, AiSettings], dict]] = {
 }
 
 
+RETRY_NOTE = ("\n\nYour previous answer to this request could not be parsed. Reply with exactly one JSON object "
+              "in the requested shape: no prose, no markdown fences.")
+
+
 def make_ask(settings: AiSettings, backends: dict | None = None) -> Callable[[str], dict]:
     """The `ask(prompt) -> dict` function for the provider chosen in `settings`."""
     backends = backends if backends is not None else BACKENDS
@@ -101,7 +105,10 @@ def make_ask(settings: AiSettings, backends: dict | None = None) -> Callable[[st
         backend = backends.get(settings.provider)
         if backend is None:
             raise ClaudeError(f"Unknown AI provider '{settings.provider}'.")
-        return backend(prompt, settings)
+        try:
+            return backend(prompt, settings)
+        except InvalidJsonError:  # one more try: models usually get it right when told
+            return backend(prompt + RETRY_NOTE, settings)
 
     return ask
 

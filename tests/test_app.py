@@ -603,3 +603,31 @@ def test_the_effective_model_is_reported_for_the_header():
     assert c.get("/api/ai").json()["effective_model"] == "claude-sonnet-5-5"
     c.post("/api/ai", data={"provider": "claude-cli", "model": ""})
     assert c.get("/api/ai").json()["effective_model"] == ""
+
+
+def test_cross_site_post_is_refused():
+    c = client([VM, KV])
+    r = c.post("/api/discover", data={"resource_group": "rg"}, headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403
+    assert c.post("/api/discover", data={"resource_group": "rg"}, headers={"Origin": "http://testserver"}).status_code == 200
+
+
+def test_rebinding_host_is_refused_but_ip_and_localhost_work():
+    c = client([VM, KV])
+    assert c.get("/api/state", headers={"Host": "evil.example:8000"}).status_code == 403
+    assert c.get("/api/state", headers={"Host": "127.0.0.1:8000"}).status_code == 200
+    assert c.get("/api/state", headers={"Host": "localhost:8000"}).status_code == 200
+    assert c.get("/api/state", headers={"Host": "[::1]:8000"}).status_code == 200
+
+
+def test_allowed_hosts_env_adds_a_name(monkeypatch):
+    monkeypatch.setenv("ALLOWED_HOSTS", "devbox.lan")
+    c = client([VM, KV])
+    assert c.get("/api/state", headers={"Host": "devbox.lan:8000"}).status_code == 200
+
+
+def test_state_file_written_atomically(tmp_path):
+    f = tmp_path / "s.json"
+    c = persistent_client([VM, KV], f)
+    c.post("/api/discover", data={"resource_group": "rg"})
+    assert f.exists() and not (tmp_path / "s.json.tmp").exists()

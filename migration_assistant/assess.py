@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -25,6 +26,21 @@ RULES: dict[str, Rule] = {
     "Microsoft.DocumentDB/databaseAccounts": Rule("rebuild", "Self-hosted MongoDB on a Public Cloud instance", "No managed Cosmos DB equivalent.", ["launchInstance"]),
     "Microsoft.ServiceBus/namespaces": Rule("rebuild", "Self-hosted RabbitMQ on a Public Cloud instance", "No managed messaging service.", ["launchInstance"]),
     "Microsoft.Sql/servers": Rule("rebuild", "Self-hosted database on a Public Cloud instance", "No managed Azure SQL equivalent.", ["launchInstance"]),
+    "Microsoft.OperationalInsights/workspaces": Rule("rebuild", "Grafana with Loki and Prometheus on a Public Cloud instance", "Leaseweb has no managed log analytics service.", ["launchInstance"]),
+    "Microsoft.Insights/components": Rule("rebuild", "Grafana with Loki and Prometheus on a Public Cloud instance", "Leaseweb has no managed application monitoring service.", ["launchInstance"]),
+}
+
+# A storage account that holds more than blobs: a bucket alone would lose its queues, tables or shares.
+STORAGE_TYPE = "Microsoft.Storage/storageAccounts"
+NON_BLOB = {"queues": "queues", "tables": "tables", "shares": "file shares"}
+
+# Nothing to create on Leaseweb on their own: they come with, or are replaced inside, another resource.
+INCLUDED_RULES: dict[str, tuple[str, str]] = {
+    "Microsoft.Web/serverFarms": ("Part of the app that runs on it", "The plan's compute becomes the app's Public Cloud instance."),
+    "Microsoft.ManagedIdentity/userAssignedIdentities": ("Replaced by credentials stored in Vault", "Leaseweb has no managed identities; apps read their credentials from Vault instead."),
+    "Microsoft.Network/privateEndpoints": ("Part of the private network", "Services on a Leaseweb private network are reached directly; no endpoint is needed."),
+    "Microsoft.Network/privateDnsZones": ("Part of the private network", "Use the instances' private IPs, or a DNS server on the private network."),
+    "Microsoft.Network/privateDnsZones/virtualNetworkLinks": ("Part of the private network", "Comes with its private DNS zone; nothing to migrate separately."),
 }
 
 # Part of their VM in Leaseweb: shown as 'included', nothing to migrate separately.
@@ -84,10 +100,48 @@ def _owner_ref(r: Resource) -> tuple[str, str]:
     return "", ""
 
 
-def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None = None) -> list[Assessment]:
+def _storage_rule(r: Resource) -> Rule | None:
+    """Rebuild for a storage account that uses queues, tables or file shares; None for blobs only (or unknown)."""
+    services = (r.properties or {}).get("services") or {}
+    used = [label for kind, label in NON_BLOB.items() if services.get(kind)]
+    if not used:
+        return None
+    target = ("Object Storage for the blobs, plus RabbitMQ on a Public Cloud instance for the queues" if services.get("queues")
+              else "Object Storage for the blobs, plus self-hosted services on a Public Cloud instance")
+    return Rule("rebuild", target,
+                f"Object Storage replaces blobs only; this account also holds {' and '.join(used)}, "
+                "which need their own service.",
+                ["createObjectStorageBucket", "launchInstance"])
+
+
+def _known_rule(r: Resource) -> Rule | None:
+    if r.type == STORAGE_TYPE:
+        return _storage_rule(r) or RULES[STORAGE_TYPE]
+    return RULES.get(r.type)
+
+
+def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None = None, workers: int = 4) -> list[Assessment]:
     ops = ops if ops is not None else load_operations()
-    results: list[Assessment] = []
+
+    def ask_type(r: Resource) -> Rule:
+        ans = ask(
+            f"Azure resource type {r.type} (name {r.name}). Can it migrate directly to Leaseweb "
+            "(Public Cloud, Object Storage, private networks)? Reply JSON: "
+            '{"route": "direct"|"rebuild", "target": str, "rationale": str, "lw_operations": [str]}'
+        )
+        return _rule_from_answer(ans, ops)
+
+    # One AI question per unknown type, asked in parallel (the first resource of each type is the example).
+    unknown: dict[str, Resource] = {}
+    for r in resources:
+        if r.type not in FOLDED and r.type not in INCLUDED_RULES and _known_rule(r) is None:
+            unknown.setdefault(r.type, r)
     cache: dict[str, Rule] = {}
+    if unknown:
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(unknown)))) as pool:
+            cache = dict(zip(unknown, pool.map(ask_type, unknown.values())))
+
+    results: list[Assessment] = []
     for r in resources:
         if r.type in FOLDED:
             owner = _owner(r)
@@ -95,13 +149,10 @@ def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None
                 r.name, "included", f"Part of {owner}" if owner else "Part of the resource it is attached to",
                 "Comes with its owner on Leaseweb; nothing to migrate separately.", []))
             continue
-        rule = RULES.get(r.type) or cache.get(r.type)
-        if rule is None:
-            ans = ask(
-                f"Azure resource type {r.type} (name {r.name}). Can it migrate directly to Leaseweb "
-                "(Public Cloud, Object Storage, private networks)? Reply JSON: "
-                '{"route": "direct"|"rebuild", "target": str, "rationale": str, "lw_operations": [str]}'
-            )
-            rule = cache[r.type] = _rule_from_answer(ans, ops)
+        if r.type in INCLUDED_RULES:
+            target, rationale = INCLUDED_RULES[r.type]
+            results.append(Assessment(r.name, "included", target, rationale, []))
+            continue
+        rule = _known_rule(r) or cache[r.type]
         results.append(Assessment(r.name, rule.route, rule.target, rule.rationale, list(rule.lw_operations)))
     return results
