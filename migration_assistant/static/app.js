@@ -32,9 +32,14 @@ function setLoading(btn, on, label) {
   }
 }
 
-// The route station of a stage that is working gets a turning ring.
+// The route station of a stage that is working gets a turning ring. One stage runs at a time:
+// while it runs, the other stages' run buttons and Start over are locked (refreshGates).
+let running = null;
+const blockedBy = (stage) => running !== null && running !== stage;
 function stageWorking(stage, on) {
   document.querySelector(`[data-stage="${stage}"]`).classList.toggle("working", on);
+  running = on ? stage : running === stage ? null : running;
+  refreshGates();
 }
 
 // What the output area shows while a request runs: what is happening and how long it can take.
@@ -86,6 +91,8 @@ const AZURE_ICONS = {
 const resourceTypes = {};
 const resourceKinds = {};
 const resourceByName = {};
+const discoverIndex = {};  // resource name -> position in the Discover layer order
+const byDiscoverOrder = (a, b) => (discoverIndex[a] ?? Infinity) - (discoverIndex[b] ?? Infinity) || compareValues(a, b);
 
 function icon(type, kind) {
   const t = (type || "").toLowerCase();
@@ -120,7 +127,8 @@ function show(stage) {
   next.hidden = i === STAGES.length - 1 || !done[stage];
   next.textContent = "Continue to " + (STAGE_LABELS[STAGES[i + 1]] || "").toLowerCase();
   next.dataset.to = STAGES[i + 1] || "";
-  $("export").hidden = !(stage === "plan" || stage === "migrate");
+  $("export").hidden = !((stage === "plan" || stage === "migrate") && done.plan);
+  refreshGates();
   if (stage === "migrate" && !$("migrate-out").childElementCount) prepareMigrate();
 }
 
@@ -225,6 +233,8 @@ const compareValues = (x, y) => (typeof x === "number" && typeof y === "number"
 
 function sortableTable(columns, entries, initial = -1) {
   const tbody = el("tbody");
+  // Equal values keep the given order (for resources: the Discover layer order), not the alphabet.
+  entries.forEach((e, i) => { e.order = i; });
   let sort = { col: initial, dir: 1 };
   const ths = columns.map((name, col) => {
     const btn = el("button", { type: "button", class: "sort" }, name, el("span", { class: "arrow", "aria-hidden": "true" }));
@@ -236,7 +246,7 @@ function sortableTable(columns, entries, initial = -1) {
   });
   function paint() {
     const shown = sort.col < 0 ? entries
-      : entries.slice().sort((a, b) => sort.dir * compareValues(a.values[sort.col], b.values[sort.col]) || compareValues(a.values[0], b.values[0]));
+      : entries.slice().sort((a, b) => sort.dir * compareValues(a.values[sort.col], b.values[sort.col]) || a.order - b.order);
     tbody.replaceChildren(...shown.flatMap((e) => e.rows));
     ths.forEach((th, col) => {
       th.setAttribute("aria-sort", sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none");
@@ -417,6 +427,7 @@ function renderDiscover(resources) {
     resourceTypes[r.name] = r.type;
     resourceKinds[r.name] = (r.properties || {}).kind || "";
     resourceByName[r.name] = r;
+    discoverIndex[r.name] = i;
     const panelId = "config-" + i;
     const toggle = el("button", { type: "button", class: "expander", "aria-expanded": "false", "aria-controls": panelId, "aria-label": `Show configured values of ${r.name}` }, el("span", { class: "chev", "aria-hidden": "true" }));
     const detail = el("tr", { class: "detail", id: panelId, hidden: "" }, el("td", { colspan: "3" }, configPanel(r)));
@@ -429,19 +440,25 @@ function renderDiscover(resources) {
       el("td", { title: r.type }, typeName(r.type), ...(headline(r) ? [el("div", { class: "headline" }, headline(r))] : [])), el("td", {}, PortalLib.locationName(r.location)));
     return { rows: [row, detail], values: [r.name, typeName(r.type), PortalLib.locationName(r.location)] };
   });
-  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values. Click a column header to sort.`),
+  $("discover-out").replaceChildren(el("p", { class: "count" }, `${plural(resources.length, "resource")} found, listed by layer: network, identity, data, compute, then monitoring, `
+    + "each followed by what is attached to it. Expand a row to see its configured values. Click a column header to sort."),
     sortableTable(["Resource", "Type", "Location"], entries));
   done.discover = true;
   setLocked("assess", false);
 }
 
 // Route filter on the Assess table: the chips toggle routes; nothing selected shows everything.
-function needsCell(a) {
+// The table opens sorted on Step, so it is the first column, like Order in Automatic migration.
+function stepCell(a) {
   if (a.route === "included") return el("td", { class: "sub" }, "With its owner");
+  return el("td", {}, el("span", { class: "needs-step" }, `Step ${(a.wave ?? 0) + 1}`));
+}
+
+function needsCell(a) {
+  if (a.route === "included") return el("td", { class: "sub" }, "-");
   const deps = a.dependencies || [];
-  const step = el("div", { class: "needs-step" }, `Step ${(a.wave ?? 0) + 1}`);
-  if (!deps.length) return el("td", {}, step, el("div", { class: "sub" }, "Nothing"));
-  return el("td", {}, step, el("ul", { class: "deps" }, ...deps.map((d) =>
+  if (!deps.length) return el("td", { class: "sub" }, "Nothing");
+  return el("td", {}, el("ul", { class: "deps" }, ...deps.map((d) =>
     el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
 }
 
@@ -468,16 +485,17 @@ function renderAssess(assessments, message = "") {
   assessments.forEach((a) => { waveOf[a.resource_name] = a.route === "included" ? null : (a.wave ?? 0); routeOf[a.resource_name] = a.route; });
   const picked = new Set();
   let query = "";
-  const entries = assessments.map((a) => {
+  const ordered = assessments.slice().sort((a, b) => byDiscoverOrder(a.resource_name, b.resource_name));
+  const entries = ordered.map((a) => {
     const r = resourceByName[a.resource_name];
     const source = typeName(resourceTypes[a.resource_name] || "");
     const sub = r ? headline(r) : "";
     const deps = (a.dependencies || []).map((d) => d.name);
-    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)),
+    const tr = el("tr", { "data-route": a.route }, stepCell(a), el("td", {}, resCell(a.resource_name)),
       el("td", { title: resourceTypes[a.resource_name] || "" }, source, ...(sub ? [el("div", { class: "headline" }, sub)] : [])),
-      el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), whyCell(a.rationale));
+      el("td", {}, pill(a.route)), el("td", {}, a.target), needsCell(a), whyCell(a.rationale));
     tr.dataset.text = [a.resource_name, source, a.target, a.rationale, LABELS[a.route], ...deps].join(" ").toLowerCase();
-    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, stepOf(a.resource_name), a.rationale] };
+    return { rows: [tr], values: [stepOf(a.resource_name), a.resource_name, source, LABELS[a.route] || a.route, a.target, deps.length, a.rationale] };
   });
   const rows = entries.map((e) => e.rows[0]);
   const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, source, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
@@ -510,9 +528,9 @@ function renderAssess(assessments, message = "") {
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
       el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately. ",
-      el("b", {}, "Step"), " is the order resources are created on Leaseweb; under it are the resources that must exist first. Manual and Automatic migration follow this order."),
+      el("b", {}, "Step"), " is the order resources are created on Leaseweb, and ", el("b", {}, "Needs first"), " lists what must exist before it. Manual and Automatic migration follow this order."),
     ...(message ? [el("p", { class: "note", role: "status" }, message)] : []),
-    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Step", "Why"], entries, 4));
+    sortableTable(["Step", "Resource", "Azure source", "Route", "Leaseweb target", "Needs first", "Why"], entries, 0));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -535,7 +553,7 @@ function renderPlan(plans, message) {
       syncToggle();
     });
     out.addEventListener("toggle", syncToggle, true);  // a card opened or closed by hand
-    const ordered = plans.slice().sort((a, b) => compareValues(stepOf(a.resource_name), stepOf(b.resource_name)));
+    const ordered = plans.slice().sort((a, b) => compareValues(stepOf(a.resource_name), stepOf(b.resource_name)) || byDiscoverOrder(a.resource_name, b.resource_name));
     const anyDiff = plans.some((p) => p.code_changes.some((c) => { const st = DiffLib.diffStats(c.diff); return st.added + st.removed > 0; }));
     const patch = anyDiff ? el("a", { class: "btn secondary", href: "/export/patch", download: "migration-code-changes.patch" }, "Download code changes (.patch)") : "";
     out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}, in creation order`), el("span", { class: "plan-tools-actions" }, patch, toggleAll)), ...ordered.map((p) => {
@@ -717,7 +735,7 @@ function updateRowStatus(row, planned) {
   const noId = Object.keys(row.chained).filter((p) => !chainIds[p]);
   row.tr.classList.toggle("needs", missing > 0);
   // Single runs: in LIVE a call cannot run before the call that supplies its id has succeeded.
-  row.runBtn.disabled = busy || missing > 0 || (live && noId.length > 0);  // also for rows that already ran, so they can be retried
+  row.runBtn.disabled = busy || blockedBy("migrate") || missing > 0 || (live && noId.length > 0);  // also for rows that already ran, so they can be retried
   row.runBtn.title = missing > 0 ? "Fill in the required values first" : (live && noId.length ? `Run ${row.chained[noId[0]]} first` : "");
   if (row.ran) return;
   const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, chainIds[p] ? `${p} = ${chainIds[p]} (from ${op})` : `${p} comes from ${op}`));
@@ -737,7 +755,9 @@ function refreshRows() {
     r.runBtn.textContent = live ? "Run live" : "Run";
     updateRowStatus(r, plan[i]);
   });
-  $("migrate-btn").disabled = busy;
+  $("migrate-btn").disabled = busy || blockedBy("migrate") || !migrateRows.length;
+  // The downloads hold the prepared calls, so they only make sense once there are calls.
+  ["export-sh", "export-json"].forEach((id) => { $(id).hidden = !migrateRows.length; });
   refreshTeardown();
 }
 
@@ -897,7 +917,8 @@ function refreshTeardown() {
   const btn = $("teardown-btn");
   btn.hidden = !(live && createdItems.length);
   btn.textContent = `Remove what this migration created (${createdItems.length})`;
-  btn.disabled = busy;
+  btn.disabled = busy || blockedBy("migrate");
+  refreshStartOver();  // created resources alone are something Start over would forget
 }
 
 const createdLabel = (c) => `${c.operation_id} for ${c.source || "?"} (${Object.entries(c.params || {}).map(([k, v]) => `${k} ${v}`).join(", ")})`;
@@ -914,12 +935,14 @@ async function teardown() {
   setError("");
   setBusy(true);
   btn.classList.add("loading");
+  stageWorking("migrate", true);
   let res, data;
   try {
     res = await fetch("/api/migrate/teardown", { method: "POST" });
     data = await res.json();
   } catch (e) { res = null; }
   btn.classList.remove("loading");
+  stageWorking("migrate", false);
   busy = false;
   if (!res || !res.ok) { setBusy(false); setError((data && data.error) || "Teardown failed. Check the server and retry.", teardown); return; }
   setChain(data.chain);
@@ -956,7 +979,7 @@ const withIds = (path) => path.replace(/\{([^}/]+)\}/g, (m, p) => chainIds[p] ||
 
 // Run one call. A live call asks for an explicit Send first.
 async function runRow(row) {
-  if (busy || row.runBtn.disabled) return;
+  if (busy || blockedBy("migrate") || row.runBtn.disabled) return;
   let call;
   try { call = collectCall(row); } catch (e) { rowError(row, e.message + "."); return; }
   if (live) {
@@ -1004,7 +1027,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 // Run every call that has not been sent yet, in order. A live run first lists exactly what will be
 // sent and what will be skipped, and waits for an explicit Send.
 async function migrate() {
-  if (busy || !migrateRows.length) return;
+  if (busy || blockedBy("migrate") || !migrateRows.length) return;
   const btn = $("migrate-btn");
   const note = $("migrate-note");
   const plan = runPlan();
@@ -1404,19 +1427,45 @@ function showBlock(id, text, barId) {
   p.replaceChildren(...withCode(text), " ", fix);
 }
 
+// Set a button's disabled state and say why on hover, unless its own action is running.
+function gate(btn, why) {
+  if (btn.classList.contains("loading")) return;
+  if (btn.dataset.title === undefined) btn.dataset.title = btn.getAttribute("title") || "";  // the title it has when enabled
+  btn.disabled = !!why;
+  if (why) btn.title = why; else if (btn.dataset.title) btn.title = btn.dataset.title; else btn.removeAttribute("title");
+}
+
+const runningText = () => `Wait until ${STAGE_LABELS[running]} finishes.`;
+
 function refreshGates() {
+  if (!$("discover-btn")) return;
   const az = azureState;
   const azBlock = az && !az.signed_in ? az.message : "";
-  const dbtn = $("discover-btn");
-  if (!dbtn.classList.contains("loading")) dbtn.disabled = !!azBlock;
+  // While the sign-in is still being checked nothing can read Azure yet, so the Azure actions wait too.
+  const azWhy = !az ? "Checking the Azure sign-in..." : azBlock ? "Needs an Azure sign-in" : "";
+  gate($("discover-btn"), azWhy || (blockedBy("discover") ? runningText() : ""));
+  gate($("rg-refresh"), azWhy || (running ? runningText() : ""));
+  $("rg").disabled = $("rg-typed").disabled = !!azBlock || running === "discover";
   showBlock("discover-block", azBlock ? "Discover needs Azure: " + azBlock : "", "azurebar");
-  const rbtn = $("rg-refresh");
-  if (!rbtn.classList.contains("loading")) rbtn.disabled = !!azBlock;
+  gate($("az-sub-save"), running ? runningText() : "");
+  gate($("assess-btn"), blockedBy("assess") ? runningText() : "");
+  if (!$("assess-btn").classList.contains("loading")) $("assess-btn").textContent = done.assess ? "Re-run assessment" : "Run assessment";
   const aiBlock = aiState && aiState.problem;
-  const pbtn = $("plan-btn");
-  if (!pbtn.classList.contains("loading")) pbtn.disabled = !!aiBlock;
+  gate($("plan-btn"), !aiState ? "Checking the AI provider..." : aiBlock ? "Needs a working AI provider" : blockedBy("plan") ? runningText() : "");
   showBlock("plan-block", aiBlock ? "Plans need a working AI provider: " + aiBlock : "", "aibar");
   showBlock("assess-block", aiBlock ? "The AI provider is not ready, so resource types without a built-in rule cannot be classified and AI dependency links are skipped." : "", "aibar");
+  if (!$("migrate-btn").classList.contains("loading")) $("migrate-btn").disabled = busy || blockedBy("migrate") || !migrateRows.length;
+  refreshStartOver();
+}
+
+// ---- session: Start over only appears when there is something to erase, and waits for a running stage
+const hasResults = () => STAGES.some((s) => done[s]) || Object.keys(resourceByName).length > 0 || createdItems.length > 0;
+
+function refreshStartOver() {
+  const btn = $("reset-btn");
+  btn.hidden = !hasResults();
+  gate(btn, running || busy ? (running ? runningText() : "Wait until the running call finishes.") : "");
+  $("restored-reset").disabled = btn.disabled;
 }
 
 // ---- resource group picker: a dropdown of the groups the az login can see (a text box if az cannot list them)
@@ -1451,12 +1500,14 @@ async function loadGroups(keep) {
     setError(`${e.message} You can type the resource group name instead.`, null);
   }
   setLoading($("rg-refresh"), false);
+  refreshGates();  // setLoading re-enables the button; the gates decide whether it may be
 }
 
 async function discover() {
   const trigger = $("discover-btn");
   if (trigger.disabled) return;
   if (!(await confirmWipe("discover", $("discover-form"), "Discover", trigger))) return;
+  if (running) return;  // another stage started while the confirmation was open
   const group = currentGroup();
   if (!group) { setError("Enter or pick a resource group first.", null); return; }
   setLoading(trigger, true, "Discovering...");
@@ -1473,8 +1524,10 @@ async function discover() {
 }
 
 async function assess() {
+  if (running || !done.discover) return;  // e.g. the Assess step clicked while an assessment already runs
   if (done.assess && !(await confirmWipe("assess", $("assess-btn").parentElement, "Assess", $("assess-btn")))) return;
   const btn = $("assess-btn");
+  if (running) return;  // another stage started while the confirmation was open
   const n = Object.keys(resourceByName).length;
   setLoading(btn, true, "Assessing...");
   stageWorking("assess", true);
@@ -1567,6 +1620,7 @@ async function plan() {
   const submit = $("plan-btn");
   if (submit.disabled) return;
   if (!(await confirmWipe("plan", $("plan-form"), "Generate the plan", submit))) return;
+  if (running) return;
   setLoading(submit, true, "Generating...");
   stageWorking("plan", true);
   const pending = call("/api/plan", form, $("plan-out"), plan);
@@ -1654,18 +1708,43 @@ async function restore() {
   if (s.plans.length || s.calls.length) { renderPlan(s.plans, "Nothing to plan: every resource migrates directly."); furthest = "plan"; }
   if (s.calls.length) { await ensureOptions(); renderMigrate(s.calls); done.migrate = true; furthest = "migrate"; }
   if (furthest) {
+    const when = s.saved_at ? ` (saved ${PortalLib.formatDate(s.saved_at)})` : "";
+    $("restored-text").textContent = `Showing saved results for ${s.resource_group || "your resource group"} from your last session${when}. `
+      + "Continue where you left off, re-run any stage to refresh it, or start over.";
     $("restored").hidden = false;
     show(furthest);
   }
+  refreshGates();
+}
+
+// What Start over erases, named from what this session actually has.
+function resetDetails() {
+  const n = Object.keys(resourceByName).length;
+  const lost = [
+    n ? `${plural(n, "discovered resource")} from ${currentGroup() || "the resource group"}` : "",
+    done.assess ? "the assessment" : "",
+    done.plan ? "the manual migration plans" : "",
+    migrateRows.length ? "the automatic migration values and results" : "",
+  ].filter(Boolean);
+  const details = [];
+  if (lost.length) details.push(`Erased: ${listOf(lost)}.`);
+  if (createdItems.length) {
+    details.push(el("span", {}, el("b", {}, `${plural(createdItems.length, "resource")} created by live calls stay in your Leaseweb account. `),
+      "After Start over this app no longer knows about them, so it cannot remove them. Use Remove what this migration created first if you do not need them."));
+  }
+  details.push("Kept: the Azure subscription, the AI provider and the Leaseweb key.");
+  return details;
 }
 
 // Start over asks first, with the same inline Confirm / Cancel as every other destructive action.
 async function resetAll() {
+  if (running || busy) return;
+  const trigger = document.activeElement;  // the header button or the one in the restored banner
   const ok = await askInline((p) => { $("top-confirm").replaceChildren(p); return p; }, {
-    message: "Erase all saved results and start over?",
-    details: ["Discovered resources, the assessment, plans and migration values are deleted. The API key stays."],
-    confirmLabel: "Erase and start over", danger: true, returnFocus: $("reset-btn") });
-  if (!ok) return;
+    message: createdItems.length ? "Start over and forget the Leaseweb resources this migration created?" : "Erase all saved results and start over?",
+    details: resetDetails(),
+    confirmLabel: "Erase and start over", danger: true, returnFocus: trigger instanceof HTMLElement ? trigger : $("reset-btn") });
+  if (!ok || running || busy) return;
   try {
     const res = await fetch("/api/reset", { method: "POST" });
     if (!res.ok) throw new Error();
@@ -1675,7 +1754,7 @@ async function resetAll() {
   }
   setError("");
   Object.keys(done).forEach((k) => { done[k] = false; });
-  Object.keys(resourceTypes).forEach((k) => delete resourceTypes[k]);
+  [resourceTypes, resourceKinds, resourceByName, discoverIndex, waveOf, routeOf].forEach((m) => Object.keys(m).forEach((k) => delete m[k]));
   ["assess", "plan", "migrate"].forEach((s) => { setLocked(s, true); $(s + "-out").replaceChildren(); });
   $("discover-out").replaceChildren(el("p", { class: "empty" }, "No resources loaded yet. Pick a resource group and discover it."));
   setGroup(defaultGroup());
@@ -1687,6 +1766,8 @@ async function resetAll() {
   $("migrate-note").replaceChildren();
   $("restored").hidden = true;
   show("discover");
+  // The reset button is gone now (nothing to erase), so focus goes to where a new run starts.
+  ($("rg").hidden ? $("rg-typed") : $("rg")).focus();
 }
 
 document.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => {
@@ -1731,6 +1812,7 @@ $("detail-close").addEventListener("click", () => $("detail-dialog").close());
 $("detail-dialog").addEventListener("click", (e) => { if (e.target === $("detail-dialog")) $("detail-dialog").close(); });
 diffDialog().addEventListener("click", (e) => { if (e.target === diffDialog()) diffDialog().close(); });  // click on the backdrop
 $("restored-dismiss").addEventListener("click", () => { $("restored").hidden = true; });
+$("restored-reset").addEventListener("click", resetAll);
 $("next").addEventListener("click", () => {
   const to = $("next").dataset.to;
   if (to === "assess" && !done.assess) { show("assess"); assess(); } else show(to);

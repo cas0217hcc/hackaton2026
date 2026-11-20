@@ -30,7 +30,7 @@
       <button class="btn ghost conn" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar"><i class="dot" id="ai-dot"></i><span id="ai-btn-text">AI: Claude Code (CLI)<span class="ai-model">default model</span></span></button>
       <button class="btn ghost conn" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar"><i class="dot" id="key-dot"></i><span id="key-btn-text">Leaseweb: no key</span></button>
     </span>
-    <button class="btn ghost" id="reset-btn" type="button">Start over</button>
+    <button class="btn ghost" id="reset-btn" type="button" hidden title="Erase the saved results and begin again with Discover">Start over</button>
   </div>
 </header>
 
@@ -109,8 +109,11 @@
 <main>
   <div class="card">
     <div class="restored" id="restored" hidden>
-      <span>Showing saved results from your last session. Re-run any stage to refresh them.</span>
-      <button class="link" id="restored-dismiss" type="button">Dismiss</button>
+      <span id="restored-text">Showing saved results from your last session. Re-run any stage to refresh them.</span>
+      <span class="restored-actions">
+        <button class="link" id="restored-reset" type="button">Start over</button>
+        <button class="link" id="restored-dismiss" type="button">Keep going</button>
+      </span>
     </div>
     <div id="error" class="error" role="alert" hidden>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>
@@ -179,8 +182,8 @@
         <button class="btn" id="migrate-btn">Run dry-run migration</button>
         <button class="btn secondary danger-outline" id="teardown-btn" type="button" hidden>Remove what this migration created</button>
         <span class="row-spacer"></span>
-        <a class="btn secondary" href="/export/calls.sh" download="leaseweb-calls.sh" title="The calls as last run (or as prepared), as a bash script using curl. The key comes from LSW_API_KEY.">Download as curl script</a>
-        <a class="btn secondary" href="/export/calls.json" download="leaseweb-calls.json">Download as JSON</a>
+        <a class="btn secondary" id="export-sh" hidden href="/export/calls.sh" download="leaseweb-calls.sh" title="The calls as last run (or as prepared), as a bash script using curl. The key comes from LSW_API_KEY.">Download as curl script</a>
+        <a class="btn secondary" id="export-json" hidden href="/export/calls.json" download="leaseweb-calls.json">Download as JSON</a>
       </div>
       <div id="migrate-note" aria-live="polite"></div>
       <div id="migrate-out"></div>

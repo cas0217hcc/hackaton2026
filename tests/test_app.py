@@ -156,6 +156,19 @@ def test_reset_clears_state_and_saved_file(tmp_path):
     assert persistent_client([], f).get("/api/state").json()["resources"] == []
 
 
+def test_saved_state_records_when_it_was_saved_and_reset_clears_it(tmp_path):
+    # The restored-session banner says when the results are from.
+    f = tmp_path / "s.json"
+    c = persistent_client([VM, KV], f)
+    assert c.get("/api/state").json()["saved_at"] == ""
+    run_to_assess(c)
+    saved = c.get("/api/state").json()["saved_at"]
+    assert saved.startswith("20") and saved.endswith("+00:00")
+    assert persistent_client([], f).get("/api/state").json()["saved_at"] == saved
+    c.post("/api/reset")
+    assert c.get("/api/state").json()["saved_at"] == ""
+
+
 def test_reset_without_persistence_and_when_nothing_saved():
     c = client([VM])
     run_to_assess(c)

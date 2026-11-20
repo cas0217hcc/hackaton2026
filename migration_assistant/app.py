@@ -3,6 +3,7 @@ import json
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 import httpx
@@ -41,7 +42,7 @@ DEFAULT_STATE_FILE = Path("data/state.json")
 
 def _empty_state() -> dict:
     return {"resource_group": DEFAULT_RG, "subscription": "", "source_dirs": [], "resources": [], "assessments": [], "plans": [],
-            "calls": []}
+            "calls": [], "saved_at": ""}
 
 
 def _dump(state: dict) -> dict:
@@ -57,6 +58,7 @@ def _load(path: Path | None) -> dict:
         raw = json.loads(path.read_text())
         state["resource_group"] = raw.get("resource_group", DEFAULT_RG)
         state["subscription"] = str(raw.get("subscription") or "")
+        state["saved_at"] = str(raw.get("saved_at") or "")
         old = [raw["source_dir"]] if raw.get("source_dir") else []
         state["source_dirs"] = list(raw.get("source_dirs") or old)
         state["resources"] = [Resource(**r) for r in raw.get("resources", [])]
@@ -156,6 +158,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if state_file is None:
             return
         state_file.parent.mkdir(parents=True, exist_ok=True)
+        state["saved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")  # shown when the session is restored
         with save_lock:  # write a temp file, then swap it in: a crash mid-write never leaves half a file
             tmp = state_file.with_name(state_file.name + ".tmp")
             tmp.write_text(json.dumps(_dump(state)))
