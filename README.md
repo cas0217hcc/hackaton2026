@@ -43,6 +43,17 @@ The rules live in `migration_assistant/assess.py`. Every Leaseweb operation the 
 
 ### Install and run
 
+The start scripts create a virtual environment on first run, install the requirements when they change, and start the server:
+
+```bash
+./start.sh            # Linux and macOS
+start.bat             # Windows (or .\start.ps1 in PowerShell)
+```
+
+Options: `--port 9000` (`-Port 9000` on Windows), `--host`, and `--reload` for development.
+
+Or do it by hand:
+
 ```bash
 pip install -r requirements.txt
 python3 -m uvicorn migration_assistant.app:app

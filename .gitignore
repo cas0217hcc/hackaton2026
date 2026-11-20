@@ -1,7 +1,8 @@
-.superpowers/
-__pycache__/
-.pytest_cache/
 *.pyc
-data/
 *.zip
 *:Zone.Identifier
+.pytest_cache/
+.superpowers/
+.venv/
+__pycache__/
+data/
