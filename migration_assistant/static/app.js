@@ -56,6 +56,7 @@ const AZURE_ICONS = {
 };
 const resourceTypes = {};
 const resourceKinds = {};
+const resourceByName = {};
 
 function icon(type, kind) {
   const t = (type || "").toLowerCase();
@@ -185,6 +186,32 @@ function table(headers, rows) {
   return el("div", { class: "scroll" }, t);
 }
 
+// A table whose column headers sort it: ascending, descending, then back to the given order.
+// entries: [{ rows: [tr, ...], values: [text per column] }]; extra rows (e.g. a detail row) move with their entry.
+function sortableTable(columns, entries) {
+  const tbody = el("tbody");
+  let sort = { col: -1, dir: 1 };
+  const ths = columns.map((name, col) => {
+    const btn = el("button", { type: "button", class: "sort" }, name, el("span", { class: "arrow", "aria-hidden": "true" }));
+    btn.addEventListener("click", () => {
+      sort = sort.col !== col ? { col, dir: 1 } : sort.dir === 1 ? { col, dir: -1 } : { col: -1, dir: 1 };
+      paint();
+    });
+    return el("th", { scope: "col" }, btn);
+  });
+  function paint() {
+    const shown = sort.col < 0 ? entries
+      : entries.slice().sort((a, b) => sort.dir * a.values[sort.col].localeCompare(b.values[sort.col], undefined, { numeric: true, sensitivity: "base" }));
+    tbody.replaceChildren(...shown.flatMap((e) => e.rows));
+    ths.forEach((th, col) => {
+      th.setAttribute("aria-sort", sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none");
+      th.querySelector(".arrow").textContent = sort.col === col ? (sort.dir === 1 ? "▲" : "▼") : "";
+    });
+  }
+  paint();
+  return el("div", { class: "scroll" }, el("table", {}, el("thead", {}, el("tr", {}, ...ths)), tbody));
+}
+
 const TYPE_NAMES = {
   "microsoft.network/virtualnetworks": "Virtual network",
   "microsoft.network/networksecuritygroups": "Network security group (firewall)",
@@ -305,11 +332,13 @@ function flatten(value, prefix = "", out = [], depth = 0) {
 const MAX_CONFIG_ROWS = 80;
 
 function configPanel(r) {
-  const rows = flatten(r.properties || {});
+  // Portal labels for known types; other types list every value with a readable label.
+  const { rows, curated } = PortalLib.portalFields(r);
+  if (!curated) flatten(r.properties || {}).filter(([k]) => !PortalLib.isCommonKey(k)).forEach(([k, v]) => rows.push([PortalLib.humanizeKey(k), PortalLib.fmt(v)]));
   const box = el("div", { class: "config" });
   if (!rows.length) { box.append(el("p", { class: "empty" }, "No configured values available for this resource.")); return box; }
   const dl = el("dl", { class: "kv" });
-  rows.slice(0, MAX_CONFIG_ROWS).forEach(([k, v]) => dl.append(el("dt", { class: "code" }, k), el("dd", {}, v)));
+  rows.slice(0, MAX_CONFIG_ROWS).forEach(([k, v]) => dl.append(el("dt", {}, k), el("dd", {}, v)));
   box.append(dl);
   if (rows.length > MAX_CONFIG_ROWS) box.append(el("p", { class: "note" }, `${rows.length - MAX_CONFIG_ROWS} more values not shown.`));
   return box;
@@ -328,10 +357,10 @@ function headline(r) {
 }
 
 function renderDiscover(resources) {
-  const body = [];
-  resources.forEach((r, i) => {
+  const entries = PortalLib.resourceOrder(resources).map((r, i) => {
     resourceTypes[r.name] = r.type;
     resourceKinds[r.name] = (r.properties || {}).kind || "";
+    resourceByName[r.name] = r;
     const panelId = "config-" + i;
     const toggle = el("button", { type: "button", class: "expander", "aria-expanded": "false", "aria-controls": panelId, "aria-label": `Show configured values of ${r.name}` }, el("span", { class: "chev", "aria-hidden": "true" }));
     const detail = el("tr", { class: "detail", id: panelId, hidden: "" }, el("td", { colspan: "3" }, configPanel(r)));
@@ -340,11 +369,12 @@ function renderDiscover(resources) {
       toggle.setAttribute("aria-expanded", String(open));
       detail.hidden = !open;
     });
-    body.push(el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type, resourceKinds[r.name]), el("span", { class: "id" }, r.name))),
-      el("td", { title: r.type }, typeName(r.type), ...(headline(r) ? [el("div", { class: "headline" }, headline(r))] : [])), el("td", {}, r.location)), detail);
+    const row = el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type, resourceKinds[r.name]), el("span", { class: "id" }, r.name))),
+      el("td", { title: r.type }, typeName(r.type), ...(headline(r) ? [el("div", { class: "headline" }, headline(r))] : [])), el("td", {}, PortalLib.locationName(r.location)));
+    return { rows: [row, detail], values: [r.name, typeName(r.type), PortalLib.locationName(r.location)] };
   });
-  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values.`),
-    table(["Resource", "Type", "Location"], body));
+  $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values. Click a column header to sort.`),
+    sortableTable(["Resource", "Type", "Location"], entries));
   done.discover = true;
   setLocked("assess", false);
 }
@@ -353,12 +383,18 @@ function renderDiscover(resources) {
 function renderAssess(assessments) {
   const picked = new Set();
   let query = "";
-  const rows = assessments.map((a) => {
-    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale));
-    tr.dataset.text = [a.resource_name, a.target, a.rationale, LABELS[a.route]].join(" ").toLowerCase();
-    return tr;
+  const entries = assessments.map((a) => {
+    const r = resourceByName[a.resource_name];
+    const source = typeName(resourceTypes[a.resource_name] || "");
+    const sub = r ? headline(r) : "";
+    const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)),
+      el("td", { title: resourceTypes[a.resource_name] || "" }, source, ...(sub ? [el("div", { class: "headline" }, sub)] : [])),
+      el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale));
+    tr.dataset.text = [a.resource_name, source, a.target, a.rationale, LABELS[a.route]].join(" ").toLowerCase();
+    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, a.rationale] };
   });
-  const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
+  const rows = entries.map((e) => e.rows[0]);
+  const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, source, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
   const note = el("span", { class: "filter-note", role: "status", "aria-live": "polite" });
   const clear = el("button", { type: "button", class: "link", hidden: "" }, "Show all");
   const chips = [];
@@ -388,7 +424,7 @@ function renderAssess(assessments) {
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
       el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately."),
-    table(["Resource", "Leaseweb target", "Route", "Why"], rows));
+    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Why"], entries));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -981,13 +1017,34 @@ function refreshFolders() {
   document.querySelectorAll(".folder-remove").forEach((b) => { b.hidden = n === 1; });
 }
 
+// The server runs on this machine, so it opens the OS folder picker (Explorer, Finder, ...) and returns the path.
+async function browseFolder(input, btn) {
+  btn.disabled = true;
+  try {
+    const form = new FormData();
+    form.append("initial", input.value.trim());
+    const res = await fetch("/api/pick-folder", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not open the folder picker.");
+    setError("");
+    if (data.path) input.value = data.path;
+  } catch (e) {
+    setError(e.message);
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
 function addFolder(value = "") {
   if (folderInputs().length >= MAX_FOLDERS) return;
   const i = folderInputs().length;
   const input = el("input", { class: "folder-input", id: "src-" + i, placeholder: "/path/to/app", autocomplete: "off", "aria-label": "Source folder " + (i + 1) });
   input.value = value;
   const remove = el("button", { type: "button", class: "btn secondary folder-remove", "aria-label": "Remove folder " + (i + 1) }, "Remove");
-  const row = el("div", { class: "folder-row" }, input, remove);
+  const browse = el("button", { type: "button", class: "btn secondary", "aria-label": "Browse for folder " + (i + 1) }, "Browse…");
+  browse.addEventListener("click", () => browseFolder(input, browse));
+  const row = el("div", { class: "folder-row" }, input, browse, remove);
   remove.addEventListener("click", () => { row.remove(); refreshFolders(); });
   $("folder-list").append(row);
   refreshFolders();

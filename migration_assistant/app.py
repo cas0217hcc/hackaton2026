@@ -19,6 +19,7 @@ from .azure_discovery import DiscoveryError, list_resource_groups, list_resource
 from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
 from .llm import AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
+from .folder_picker import FolderPickerError, pick_folder as default_pick_folder
 from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
@@ -62,7 +63,8 @@ def _load(path: Path | None) -> dict:
 
 def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask,
-               models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups) -> FastAPI:
+               models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups,
+               pick_folder: Callable = default_pick_folder) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -127,6 +129,13 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
             return {"groups": groups_fn(), "default": DEFAULT_RG}
         except DiscoveryError as e:
             return error(str(e))
+
+    @app.post("/api/pick-folder")
+    def api_pick_folder(initial: str = Form("")):
+        try:
+            return {"path": pick_folder(initial)}
+        except FolderPickerError as e:
+            return error(str(e), 500)
 
     @app.post("/api/discover")
     def api_discover(resource_group: str = Form(DEFAULT_RG)):

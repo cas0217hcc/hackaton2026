@@ -186,6 +186,9 @@ tr.detail > td { padding: 0; background: #f8f9fd; }
 .config { padding: 14px 20px 16px 62px; }
 .kv { display: grid; grid-template-columns: minmax(180px, 34%) 1fr; gap: 4px 20px; margin: 0; max-width: 960px; }
 .kv dt { color: var(--mute); overflow-wrap: anywhere; font-size: 12px; }
+.sort { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font: inherit; color: inherit; letter-spacing: inherit; cursor: pointer; }
+.sort:hover { color: var(--ink); }
+.sort .arrow { font-size: 9px; min-width: 9px; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .config { padding-left: 16px; } .kv { grid-template-columns: 1fr; } .kv dd { margin-bottom: 6px; } }
 

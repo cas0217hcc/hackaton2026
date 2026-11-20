@@ -538,3 +538,23 @@ def test_plan_detail_lists_operations_that_no_step_names():
 
 def test_plan_detail_for_an_unknown_resource_is_404():
     assert detail_client().get("/api/plan/detail", params={"resource": "nope"}).status_code == 404
+
+
+def test_pick_folder_returns_the_chosen_path():
+    seen = {}
+    def pick(initial):
+        seen["initial"] = initial
+        return r"C:\src\app"
+    c = TestClient(create_app(discover=lambda rg: [], ask=plan_answer, state_file=None, pick_folder=pick))
+    r = c.post("/api/pick-folder", data={"initial": r"C:\src"})
+    assert r.status_code == 200 and r.json() == {"path": r"C:\src\app"}
+    assert seen["initial"] == r"C:\src"
+
+
+def test_pick_folder_error_is_reported():
+    from migration_assistant.folder_picker import FolderPickerError
+    def pick(initial):
+        raise FolderPickerError("no Tk")
+    c = TestClient(create_app(discover=lambda rg: [], ask=plan_answer, state_file=None, pick_folder=pick))
+    r = c.post("/api/pick-folder")
+    assert r.status_code == 500 and r.json()["error"] == "no Tk"
