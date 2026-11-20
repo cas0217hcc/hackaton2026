@@ -26,7 +26,7 @@ RULES: dict[str, Rule] = {
     "Microsoft.Sql/servers": Rule("rebuild", "Self-hosted database on a Public Cloud instance", "No managed Azure SQL equivalent.", ["launchInstance"]),
 }
 
-# Part of their VM in Leaseweb: no standalone resource to migrate.
+# Part of their VM in Leaseweb: shown as 'included', nothing to migrate separately.
 FOLDED = {
     "Microsoft.Network/networkInterfaces",
     "Microsoft.Compute/disks",
@@ -57,6 +57,8 @@ def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None
     cache: dict[str, Rule] = {}
     for r in resources:
         if r.type in FOLDED:
+            results.append(Assessment(r.name, "included", "Included with the Public Cloud instance",
+                                      "Created with the Leaseweb instance; nothing to migrate separately.", []))
             continue
         rule = RULES.get(r.type) or cache.get(r.type)
         if rule is None:

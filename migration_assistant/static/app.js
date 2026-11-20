@@ -64,7 +64,8 @@ function table(headers, rows) {
   return t;
 }
 
-const pill = (route) => el("span", { class: "pill " + route }, route === "direct" ? "Direct" : "Rebuild");
+const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
+const pill = (route) => el("span", { class: "pill " + route }, LABELS[route] || route);
 
 async function discover() {
   const out = $("discover-out");

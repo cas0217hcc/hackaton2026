@@ -44,6 +44,7 @@ th { text-align: left; font-size: 12px; color: var(--mute); font-weight: 600; pa
 td { padding: 8px 10px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
 .pill { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
 .pill.direct { background: var(--ok-bg); color: var(--ok); }
+.pill.included { background: var(--panel); color: var(--mute); }
 .pill.rebuild { background: var(--warn-bg); color: var(--warn); }
 .empty { color: var(--mute); padding: 12px 0; }
 .skeleton { height: 14px; margin: 10px 0; border-radius: 3px; background: linear-gradient(90deg, #eef0f3 25%, #e1e5ea 50%, #eef0f3 75%); background-size: 200% 100%; animation: sk 1.2s linear infinite; }

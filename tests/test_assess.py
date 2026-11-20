@@ -32,14 +32,16 @@ def test_every_rule_operation_exists_in_specs():
             assert op in ops, op
 
 
-def test_nic_disk_and_public_ip_not_listed():
+def test_nic_disk_and_public_ip_listed_as_included():
     rs = [
         res("vm1", "Microsoft.Compute/virtualMachines"),
         res("nic", "Microsoft.Network/networkInterfaces"),
         res("disk", "Microsoft.Compute/disks"),
         res("pip", "Microsoft.Network/publicIPAddresses"),
     ]
-    assert [a.resource_name for a in assess(rs, ask=no_claude)] == ["vm1"]
+    got = {a.resource_name: a for a in assess(rs, ask=no_claude)}
+    assert set(got) == {"vm1", "nic", "disk", "pip"}
+    assert all(got[n].route == "included" and got[n].lw_operations == [] for n in ("nic", "disk", "pip"))
 
 
 def test_unknown_type_uses_claude():

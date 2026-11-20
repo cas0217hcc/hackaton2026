@@ -14,7 +14,7 @@ class Resource:
 @dataclass
 class Assessment:
     resource_name: str
-    route: Literal["direct", "rebuild"]
+    route: Literal["direct", "rebuild", "included"]
     target: str
     rationale: str
     lw_operations: list[str] = field(default_factory=list)
