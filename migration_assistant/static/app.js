@@ -253,8 +253,14 @@ function renderPlan(plans, message) {
   if (!plans.length) {
     out.replaceChildren(el("p", { class: "empty" }, message));
   } else {
-    out.replaceChildren(...plans.map((p) => {
-      const card = el("details", { class: "plan", open: "" },
+    const toggleAll = el("button", { type: "button", class: "btn secondary toggle-all" }, "Expand all");
+    toggleAll.addEventListener("click", () => {
+      const open = toggleAll.textContent === "Expand all";
+      out.querySelectorAll("details.plan").forEach((d) => { d.open = open; });
+      toggleAll.textContent = open ? "Collapse all" : "Expand all";
+    });
+    out.replaceChildren(el("div", { class: "plan-tools" }, el("span", { class: "note" }, `${plans.length} plan${plans.length > 1 ? "s" : ""}`), toggleAll), ...plans.map((p) => {
+      const card = el("details", { class: "plan" },
         el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
       const box = el("div", { class: "plan-body" }, failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
       card.append(box);

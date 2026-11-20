@@ -166,6 +166,9 @@ tr.detail > td { padding: 0; background: #f9fbfc; }
 .note { color: var(--mute); margin: 0 0 12px; }
 
 /* Plan */
+.plan-tools { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.plan-tools .note { margin: 0; }
+.toggle-all { padding: 4px 12px; }
 .plan { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 20px; overflow: hidden; }
 .plan-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #f6f8fa; cursor: pointer; list-style: none; user-select: none; }
 .plan-head::-webkit-details-marker { display: none; }
