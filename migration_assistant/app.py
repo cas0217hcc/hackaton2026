@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -15,19 +15,20 @@ from .claude_cli import ClaudeError, ask_json
 from .dryrun import DryRunExecutor, build_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_operations
-from .plan import build_plan, read_source
+from .plan import build_plan, read_sources
 
 HERE = Path(__file__).parent
 DEFAULT_RG = "hackaton-2026-rg"
+MAX_FOLDERS = 5
 DEFAULT_STATE_FILE = Path("data/state.json")
 
 
 def _empty_state() -> dict:
-    return {"resource_group": DEFAULT_RG, "source_dir": "", "resources": [], "assessments": [], "plans": [], "calls": []}
+    return {"resource_group": DEFAULT_RG, "source_dirs": [], "resources": [], "assessments": [], "plans": [], "calls": []}
 
 
 def _dump(state: dict) -> dict:
-    return {k: ([asdict(x) for x in v] if isinstance(v, list) else v) for k, v in state.items()}
+    return {k: ([asdict(x) if is_dataclass(x) else x for x in v] if isinstance(v, list) else v) for k, v in state.items()}
 
 
 def _load(path: Path | None) -> dict:
@@ -38,7 +39,8 @@ def _load(path: Path | None) -> dict:
     try:
         raw = json.loads(path.read_text())
         state["resource_group"] = raw.get("resource_group", DEFAULT_RG)
-        state["source_dir"] = raw.get("source_dir", "")
+        old = [raw["source_dir"]] if raw.get("source_dir") else []
+        state["source_dirs"] = list(raw.get("source_dirs") or old)
         state["resources"] = [Resource(**r) for r in raw.get("resources", [])]
         state["assessments"] = [Assessment(**a) for a in raw.get("assessments", [])]
         state["plans"] = [
@@ -99,7 +101,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         return {"assessments": [asdict(a) for a in state["assessments"]]}
 
     @app.post("/api/plan")
-    def api_plan(source_dir: str = Form("")):
+    def api_plan(source_dirs: list[str] = Form(default=[])):
         if not state["assessments"]:
             return error("Run Assess first.", 409)
         rebuild = [a for a in state["assessments"] if a.route == "rebuild"]
@@ -107,8 +109,14 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
             state["plans"] = []
             save()
             return {"plans": [], "message": "Nothing to plan: every resource migrates directly."}
-        state["source_dir"] = source_dir
-        source = read_source(Path(source_dir) if source_dir.strip() else None)
+        dirs = [d.strip() for d in source_dirs if d.strip()]
+        if len(dirs) > MAX_FOLDERS:
+            return error(f"Provide at most {MAX_FOLDERS} source folders.", 400)
+        missing = [d for d in dirs if not Path(d).is_dir()]
+        if missing:
+            return error(f"Folder not found: {', '.join(missing)}", 400)
+        state["source_dirs"] = dirs
+        source = read_sources([Path(d) for d in dirs])
         by_name = {r.name: r for r in state["resources"]}
         try:
             state["plans"] = [build_plan(a, by_name[a.resource_name], source, ask=ask, ops=ops) for a in rebuild]

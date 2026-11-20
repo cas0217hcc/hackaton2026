@@ -9,7 +9,7 @@ Needs `az` (logged in) and `claude` (logged in) on PATH.
 
     pip install -r requirements.txt
     python3 -m uvicorn migration_assistant.app:app
-    # open http://127.0.0.1:8000, use sample_app/ as the source folder
+    # open http://127.0.0.1:8000, use sample_app/ as a source folder (up to 5 folders)
 
 ## Test
 

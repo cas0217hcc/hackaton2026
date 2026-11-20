@@ -62,10 +62,16 @@
         <h2>Plan the rebuilds</h2>
         <p>Proposed Leaseweb infrastructure for resources with no direct equivalent, plus the code changes they need.</p>
       </div>
-      <form id="plan-form" class="row">
-        <label for="src">Application source folder <span class="opt">(optional)</span></label>
-        <input id="src" name="source_dir" placeholder="/path/to/app" autocomplete="off">
-        <button class="btn" type="submit">Generate plan</button>
+      <form id="plan-form" class="sources">
+        <div class="sources-head">
+          <label for="src-0">Application source folders <span class="opt">(optional, up to 5)</span></label>
+          <span class="opt" id="folder-count"></span>
+        </div>
+        <div id="folder-list"></div>
+        <div class="sources-actions">
+          <button type="button" class="btn secondary" id="add-folder">Add folder</button>
+          <button class="btn" type="submit">Generate plan</button>
+        </div>
       </form>
       <div id="plan-out"></div>
     </section>

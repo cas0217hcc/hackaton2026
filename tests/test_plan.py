@@ -59,3 +59,27 @@ def test_steps_parsed():
 
 def test_missing_steps_defaults_to_empty():
     assert build_plan(KV, KV_RES, {}, ask=answer()).steps == []
+
+
+from migration_assistant.plan import read_sources
+
+
+def test_read_sources_combines_folders_with_prefix(tmp_path: Path):
+    a, b = tmp_path / "api", tmp_path / "web"
+    a.mkdir(); b.mkdir()
+    (a / "x.py").write_text("1")
+    (b / "x.py").write_text("2")
+    assert read_sources([a, b]) == {"api/x.py": "1", "web/x.py": "2"}
+
+
+def test_read_sources_same_folder_name_stays_distinct(tmp_path: Path):
+    a, b = tmp_path / "one" / "app", tmp_path / "two" / "app"
+    a.mkdir(parents=True); b.mkdir(parents=True)
+    (a / "x.py").write_text("1")
+    (b / "x.py").write_text("2")
+    got = read_sources([a, b])
+    assert len(got) == 2 and set(got.values()) == {"1", "2"}
+
+
+def test_read_sources_empty_list():
+    assert read_sources([]) == {}

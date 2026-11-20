@@ -21,6 +21,22 @@ def read_source(source_dir: Path | None, max_bytes: int = 200_000) -> dict[str, 
     return files
 
 
+def read_sources(dirs: list[Path], max_bytes: int = 200_000) -> dict[str, str]:
+    """Like read_source over several folders; keys are prefixed with the folder name (made unique)."""
+    out: dict[str, str] = {}
+    prefixes: list[str] = []
+    used = 0
+    for d in dirs:
+        d = Path(d)
+        base = d.name or "src"
+        prefix = base if base not in prefixes else f"{base}-{prefixes.count(base) + 1}"
+        prefixes.append(base)
+        for rel, text in read_source(d, max_bytes - used).items():
+            out[f"{prefix}/{rel}"] = text
+            used += len(text)
+    return out
+
+
 def build_plan(
     assessment: Assessment,
     resource: Resource,

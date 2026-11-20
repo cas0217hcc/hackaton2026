@@ -27,7 +27,7 @@ def run_to_assess(c):
 def test_full_flow():
     c = client([VM, KV])
     run_to_assess(c)
-    assert c.post("/api/plan", data={"source_dir": ""}).status_code == 200
+    assert c.post("/api/plan", data={"source_dirs": ""}).status_code == 200
     mig = c.post("/api/migrate")
     assert mig.status_code == 200 and mig.json()["calls"][0]["operation_id"] == "launchInstance"
     assert "kv-hack" in c.get("/export").text
@@ -44,7 +44,7 @@ def test_discover_error_returns_502_message():
 def test_plan_when_all_direct_says_nothing_to_plan():
     c = client([VM])
     run_to_assess(c)
-    r = c.post("/api/plan", data={"source_dir": ""})
+    r = c.post("/api/plan", data={"source_dirs": ""})
     assert r.status_code == 200 and r.json()["plans"] == [] and "nothing to plan" in r.json()["message"].lower()
 
 
@@ -53,7 +53,7 @@ def test_claude_error_returns_502_message():
         raise ClaudeError("claude timed out after 180s")
     c = client([VM, KV], ask=fail)
     run_to_assess(c)
-    r = c.post("/api/plan", data={"source_dir": ""})
+    r = c.post("/api/plan", data={"source_dirs": ""})
     assert r.status_code == 502 and "timed out" in r.json()["error"]
 
 
@@ -72,7 +72,7 @@ def test_state_survives_app_restart(tmp_path):
     c = persistent_client([VM, KV], f)
     c.post("/api/discover", data={"resource_group": "my-rg"})
     c.post("/api/assess")
-    c.post("/api/plan", data={"source_dir": ""})
+    c.post("/api/plan", data={"source_dirs": ""})
     c.post("/api/migrate")
     s = persistent_client([], f).get("/api/state").json()
     assert s["resource_group"] == "my-rg"
@@ -88,7 +88,7 @@ def test_restored_state_allows_export_and_replan(tmp_path):
     run_to_assess(c)
     c2 = persistent_client([], f)
     assert "kv-hack" in c2.get("/export").text
-    assert c2.post("/api/plan", data={"source_dir": ""}).status_code == 200
+    assert c2.post("/api/plan", data={"source_dirs": ""}).status_code == 200
 
 
 def test_corrupt_state_file_is_ignored(tmp_path):
@@ -104,3 +104,34 @@ def test_rediscover_clears_downstream_state(tmp_path):
     c.post("/api/discover", data={"resource_group": "rg"})
     s = c.get("/api/state").json()
     assert s["assessments"] == [] and s["plans"] == [] and s["calls"] == []
+
+
+def test_plan_accepts_up_to_five_folders(tmp_path):
+    dirs = []
+    for i in range(5):
+        d = tmp_path / f"app{i}"; d.mkdir(); (d / "m.py").write_text("x"); dirs.append(str(d))
+    c = client([VM, KV]); run_to_assess(c)
+    assert c.post("/api/plan", data={"source_dirs": dirs}).status_code == 200
+
+
+def test_plan_rejects_more_than_five_folders(tmp_path):
+    c = client([VM, KV]); run_to_assess(c)
+    r = c.post("/api/plan", data={"source_dirs": [str(tmp_path)] * 6})
+    assert r.status_code == 400 and "5" in r.json()["error"]
+
+
+def test_plan_rejects_missing_folder(tmp_path):
+    c = client([VM, KV]); run_to_assess(c)
+    r = c.post("/api/plan", data={"source_dirs": [str(tmp_path / "nope")]})
+    assert r.status_code == 400 and "nope" in r.json()["error"]
+
+
+def test_source_dirs_persist_and_old_single_dir_state_loads(tmp_path):
+    import json
+    d = tmp_path / "app"; d.mkdir(); (d / "m.py").write_text("x")
+    f = tmp_path / "s.json"
+    c = persistent_client([VM, KV], f); run_to_assess(c)
+    c.post("/api/plan", data={"source_dirs": [str(d)]})
+    assert persistent_client([], f).get("/api/state").json()["source_dirs"] == [str(d)]
+    f.write_text(json.dumps({"source_dir": "/old/app"}))
+    assert persistent_client([], f).get("/api/state").json()["source_dirs"] == ["/old/app"]
