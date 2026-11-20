@@ -115,6 +115,7 @@ td.sub { color: var(--mute); }
 .expander[aria-expanded="true"] .chev { transform: rotate(45deg) translate(-1px, -1px); }
 tr.item:hover td { background: #fafcfd; }
 tr.detail > td { padding: 0; background: #f9fbfc; }
+.headline { margin-top: 2px; color: var(--mute); font-size: 12.5px; }
 .config { padding: 14px 20px 16px 62px; }
 .kv { display: grid; grid-template-columns: minmax(180px, 34%) 1fr; gap: 4px 20px; margin: 0; max-width: 960px; }
 .kv dt { color: var(--mute); overflow-wrap: anywhere; font-size: 12px; }

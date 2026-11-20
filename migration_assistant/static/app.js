@@ -176,6 +176,18 @@ function configPanel(r) {
   return box;
 }
 
+// One short line of the most telling configured value, shown under the type.
+function headline(r) {
+  const p = r.properties || {};
+  const inner = p.properties || {};
+  const t = r.type.toLowerCase();
+  if (t === "microsoft.compute/virtualmachines" && inner.hardwareProfile && inner.hardwareProfile.vmSize) return "Size: " + inner.hardwareProfile.vmSize;
+  if (t === "microsoft.compute/disks") return [inner.diskSizeGB && inner.diskSizeGB + " GB", p.sku && p.sku.name].filter(Boolean).join(", ");
+  if (t === "microsoft.network/virtualnetworks" && inner.addressSpace) return "Address space: " + (inner.addressSpace.addressPrefixes || []).join(", ");
+  if (p.sku && p.sku.name) return "SKU: " + p.sku.name + (p.sku.tier ? " (" + p.sku.tier + ")" : "");
+  return "";
+}
+
 function renderDiscover(resources) {
   const body = [];
   resources.forEach((r, i) => {
@@ -189,7 +201,7 @@ function renderDiscover(resources) {
       detail.hidden = !open;
     });
     body.push(el("tr", { class: "item" }, el("td", {}, el("span", { class: "res" }, toggle, icon(r.type), el("span", { class: "id" }, r.name))),
-      el("td", { title: r.type }, typeName(r.type)), el("td", {}, r.location)), detail);
+      el("td", { title: r.type }, typeName(r.type), ...(headline(r) ? [el("div", { class: "headline" }, headline(r))] : [])), el("td", {}, r.location)), detail);
   });
   $("discover-out").replaceChildren(el("p", { class: "count" }, `${resources.length} resources found. Expand a row to see its configured values.`),
     table(["Resource", "Type", "Location"], body));
