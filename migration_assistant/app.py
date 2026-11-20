@@ -17,7 +17,8 @@ from starlette.requests import Request
 from .assess import assess
 from .azure_discovery import DiscoveryError, list_resources
 from .claude_cli import ClaudeError
-from .llm import AiSettings, available_providers, make_ask as default_make_ask
+from .claude_cli import MODEL_RE
+from .llm import AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
 from .dryrun import BASE_URL, DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_launch_options, load_operations
@@ -60,7 +61,8 @@ def _load(path: Path | None) -> dict:
 
 
 def create_app(discover: Callable = list_resources, ask: Callable | None = None,
-               state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask) -> FastAPI:
+               state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask,
+               models_fn: Callable = default_list_models) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
@@ -216,6 +218,8 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
             return error(f"Unknown AI provider '{provider}'.", 400)
         if provider == "opencode" and model and not re.fullmatch(r"[A-Za-z0-9][\w.\-]*/[\w.\-:/]+", model):
             return error("opencode model must look like provider/model, for example anthropic/claude-sonnet-5-5.", 400)
+        if provider == "claude-cli" and model and not MODEL_RE.fullmatch(model):
+            return error("Claude Code model must be opus, sonnet, haiku or a claude-... model id.", 400)
         ai.provider, ai.model = provider, model
         if api_key.strip():  # an empty field keeps the key that is already set
             ai.api_key = api_key.strip()
@@ -225,6 +229,12 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def api_ai_clear_key():
         ai.api_key = None
         return ai_state()
+
+    @app.get("/api/ai/models")
+    def api_ai_models(provider: str):
+        if provider not in {p["id"] for p in available_providers(ai)}:
+            return error(f"Unknown AI provider '{provider}'.", 400)
+        return models_fn(provider, ai)
 
     @app.post("/api/ai/test")
     def api_ai_test():

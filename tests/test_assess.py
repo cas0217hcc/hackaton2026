@@ -78,3 +78,34 @@ def test_invalid_route_raises_claude_error():
 def test_route_is_normalised():
     ok = {"route": "Direct", "target": "T", "rationale": "r"}
     assert assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: ok)[0].route == "direct"
+
+
+def owned(name, type_, props):
+    return Resource(f"/x/{name}", name, type_, "westeurope", props)
+
+
+def one(r):
+    return assess([r], ask=no_claude)[0]
+
+
+def test_included_nic_says_which_vm_owns_it():
+    a = one(owned("nic1", "Microsoft.Network/networkInterfaces", {"properties": {"virtualMachine": {"id": "/s/rg/providers/Microsoft.Compute/virtualMachines/vm-web-01"}}}))
+    assert a.route == "included" and a.target == "Part of virtual machine vm-web-01"
+
+
+def test_included_nic_of_a_private_endpoint_names_the_endpoint_not_a_vm():
+    a = one(owned("pe.nic.1", "Microsoft.Network/networkInterfaces", {"properties": {"privateEndpoint": {"id": "/s/rg/providers/Microsoft.Network/privateEndpoints/pe-func-blob"}}}))
+    assert a.route == "included" and a.target == "Part of private endpoint pe-func-blob"
+    assert "Public Cloud instance" not in a.target + a.rationale
+
+
+def test_included_disk_and_public_ip_name_their_owner():
+    d = one(owned("disk1", "Microsoft.Compute/disks", {"managedBy": "/s/rg/providers/Microsoft.Compute/virtualMachines/vm-web-01"}))
+    assert d.target == "Part of virtual machine vm-web-01"
+    ip = one(owned("pip1", "Microsoft.Network/publicIPAddresses", {"properties": {"ipConfiguration": {"id": "/s/rg/providers/Microsoft.Network/networkInterfaces/nic-web-01/ipConfigurations/ipconfig1"}}}))
+    assert ip.target == "Part of network interface nic-web-01"
+
+
+def test_included_resource_with_unknown_owner_keeps_the_generic_wording():
+    a = one(owned("nic2", "Microsoft.Network/networkInterfaces", {}))
+    assert a.route == "included" and a.target == "Part of the resource it is attached to"

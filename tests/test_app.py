@@ -472,3 +472,24 @@ def test_connection_test_reports_success_and_failure():
 def test_connection_test_checks_that_the_answer_is_json_with_ok():
     wrong = TestClient(create_app(state_file=None, make_ask=lambda s: (lambda prompt: {"hello": 1})))
     assert wrong.post("/api/ai/test").status_code == 502
+
+
+def test_models_endpoint_serves_the_list_for_the_requested_provider():
+    asked = []
+
+    def models_fn(provider, settings):
+        asked.append((provider, settings.api_key))
+        return {"models": [{"id": "", "label": "Default", "group": "default"}], "source": "live"}
+    c = TestClient(create_app(state_file=None, models_fn=models_fn))
+    c.post("/api/ai", data={"provider": "anthropic-api", "api_key": SECRET})
+    r = c.get("/api/ai/models", params={"provider": "anthropic-api"})
+    assert r.status_code == 200 and r.json()["source"] == "live" and SECRET not in r.text
+    assert asked == [("anthropic-api", SECRET)]
+    assert c.get("/api/ai/models", params={"provider": "nope"}).status_code == 400
+
+
+def test_claude_cli_model_must_be_an_alias_or_a_claude_model_id():
+    c, _ = ai_client()
+    assert c.post("/api/ai", data={"provider": "claude-cli", "model": "sonnet"}).status_code == 200
+    assert c.post("/api/ai", data={"provider": "claude-cli", "model": "claude-sonnet-5-5"}).status_code == 200
+    assert c.post("/api/ai", data={"provider": "claude-cli", "model": "--auto"}).status_code == 400

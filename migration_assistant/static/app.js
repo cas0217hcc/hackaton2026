@@ -287,7 +287,7 @@ function renderAssess(assessments) {
   $("assess-out").replaceChildren(
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included")),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
-      el("b", {}, "Included"), " comes with the Leaseweb instance (network interface, disk, public IP), so there is nothing to migrate separately."),
+      el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately."),
     table(["Resource", "Leaseweb target", "Route", "Why"], assessments.map((a) =>
       el("tr", {}, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale)))));
   done.assess = true;
@@ -680,8 +680,8 @@ const AI_HELP = {
   "anthropic-api": "Calls the Anthropic API directly. The key is kept in server memory only, never saved or shown again. Leave the model empty for the default (claude-opus-5-5).",
   "opencode": "Runs `opencode run` in an empty scratch folder, so it cannot touch your project. Model format: provider/model, for example anthropic/claude-sonnet-5-5. Leave it empty for opencode's own default.",
 };
-const AI_MODEL_HINT = { "anthropic-api": "claude-opus-5-5", "opencode": "provider/model (optional)" };
 let aiState = null;
+const modelLists = {};  // provider -> {models, source, error}, filled on first use
 
 function aiLabel(s) { return (s.providers.find((p) => p.id === s.provider) || {}).label || s.provider; }
 
@@ -690,7 +690,6 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-model").value = s.model;
   $("ai-btn").textContent = "AI: " + aiLabel(s);
   syncAiForm(s.provider);
   $("ai-key-remove").hidden = !s.api_key_set;
@@ -700,12 +699,43 @@ function renderAi(s) {
 // Show only the fields the chosen provider uses.
 function syncAiForm(provider) {
   $("ai-provider").value = provider;
-  $("ai-model-row").hidden = provider === "claude-cli";
   $("ai-key-row").hidden = provider !== "anthropic-api";
-  $("ai-model").placeholder = AI_MODEL_HINT[provider] || "";
+  loadModels(provider);
   $("ai-help").textContent = AI_HELP[provider] || "";
   $("ai-result").textContent = "";
   $("ai-result").className = "";
+}
+
+// Fill the model dropdown for a provider. The saved model is selected; one that is not in the list is kept as an extra entry.
+async function loadModels(provider) {
+  const sel = $("ai-model");
+  const wanted = aiState && aiState.provider === provider ? aiState.model : "";
+  if (!modelLists[provider]) {
+    sel.replaceChildren(el("option", { value: "" }, "Loading models..."));
+    sel.disabled = true;
+    try {
+      const res = await fetch("/api/ai/models?provider=" + encodeURIComponent(provider));
+      modelLists[provider] = res.ok ? await res.json() : { models: [{ id: "", label: "Default", group: "" }], source: "fallback", error: "Could not load the model list." };
+    } catch (e) {
+      modelLists[provider] = { models: [{ id: "", label: "Default", group: "" }], source: "fallback", error: "Could not load the model list." };
+    }
+  }
+  if ($("ai-provider").value !== provider) return;  // the user moved on while it loaded
+  const list = modelLists[provider];
+  const models = list.models.some((m) => m.id === wanted) ? list.models : [...list.models, { id: wanted, label: wanted + " (saved)", group: "" }];
+  const groups = {};
+  const options = [];
+  models.forEach((m) => {
+    const opt = el("option", { value: m.id }, m.label);
+    if (!m.group || m.group === "default") { options.push(opt); return; }
+    if (!groups[m.group]) { groups[m.group] = el("optgroup", { label: m.group }); options.push(groups[m.group]); }
+    groups[m.group].append(opt);
+  });
+  sel.replaceChildren(...options);
+  sel.value = wanted;
+  sel.disabled = false;
+  $("ai-model-note").textContent = list.error ? list.error
+    : list.source === "fallback" ? "Built-in list. Paste a key and save to load the live list from Anthropic." : "";
 }
 
 async function loadAi() {
@@ -722,6 +752,7 @@ async function saveAi(e) {
   try { res = await fetch("/api/ai", { method: "POST", body: form }); data = await res.json(); }
   catch (err) { setAiResult("Could not save. Check the server.", false); return false; }
   if (!res.ok) { setAiResult(data.error || "Could not save.", false); return false; }
+  delete modelLists["anthropic-api"];  // a new key can unlock the live model list
   renderAi(data);
   setAiResult("Saved.", true);
   return true;

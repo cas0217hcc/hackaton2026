@@ -27,13 +27,19 @@ def parse_json(text: str) -> dict:
     raise ClaudeError("the AI did not return valid JSON")
 
 
-def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run) -> dict:
+MODEL_RE = re.compile(r"(opus|sonnet|haiku|claude-[A-Za-z0-9][\w.\-\[\]]*)")
+
+
+def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run, model: str = "") -> dict:
     """Run `claude -p` headless and parse a JSON object from its answer.
 
     The prompt goes on stdin: a command-line argument over ~128 KB fails, and big source folders exceed it.
     """
+    if model and not MODEL_RE.fullmatch(model):
+        raise ClaudeError("Claude Code model must be opus, sonnet, haiku or a claude-... model id.")
+    cmd = ["claude", "-p"] + (["--model", model] if model else [])
     try:
-        proc = runner(["claude", "-p"], input=prompt + JSON_ONLY, capture_output=True, text=True, timeout=timeout)
+        proc = runner(cmd, input=prompt + JSON_ONLY, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise ClaudeError(f"claude timed out after {timeout}s") from None
     except FileNotFoundError:

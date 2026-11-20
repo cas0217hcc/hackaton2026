@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -51,14 +52,38 @@ def _rule_from_answer(ans: dict, ops: dict) -> Rule:
     return Rule(route, target, rationale, valid)
 
 
+def _last(resource_id: str, kind: str) -> str:
+    """Name that follows `/<kind>/` in an Azure resource id, or ''."""
+    m = re.search(rf"/{kind}/([^/]+)", resource_id or "", re.I)
+    return m.group(1) if m else ""
+
+
+def _owner(r: Resource) -> str:
+    """What a folded NIC, disk or public IP belongs to, read from its configuration."""
+    props = r.properties or {}
+    inner = props.get("properties") or {}
+    candidates = [
+        ("virtual machine", _last((inner.get("virtualMachine") or {}).get("id", ""), "virtualMachines")),
+        ("private endpoint", _last((inner.get("privateEndpoint") or {}).get("id", ""), "privateEndpoints")),
+        ("virtual machine", _last(props.get("managedBy") or "", "virtualMachines")),
+        ("network interface", _last((inner.get("ipConfiguration") or {}).get("id", ""), "networkInterfaces")),
+    ]
+    for kind, name in candidates:
+        if name:
+            return f"{kind} {name}"
+    return ""
+
+
 def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None = None) -> list[Assessment]:
     ops = ops if ops is not None else load_operations()
     results: list[Assessment] = []
     cache: dict[str, Rule] = {}
     for r in resources:
         if r.type in FOLDED:
-            results.append(Assessment(r.name, "included", "Included with the Public Cloud instance",
-                                      "Created with the Leaseweb instance; nothing to migrate separately.", []))
+            owner = _owner(r)
+            results.append(Assessment(
+                r.name, "included", f"Part of {owner}" if owner else "Part of the resource it is attached to",
+                "Comes with its owner on Leaseweb; nothing to migrate separately.", []))
             continue
         rule = RULES.get(r.type) or cache.get(r.type)
         if rule is None:

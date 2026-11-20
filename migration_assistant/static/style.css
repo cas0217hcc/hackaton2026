@@ -62,6 +62,8 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .ai-row > label { min-width: 230px; }
 .ai-row select { padding: 8px 12px; border: 1px solid var(--field); border-radius: 6px; font: inherit; color: var(--ink); background: var(--paper); min-width: 260px; }
 .ai-row input { max-width: 460px; }
+.ai-note { color: var(--mute); font-size: 13px; }
+.ai-row select#ai-model { min-width: 320px; max-width: 100%; }
 .ai-help { margin: 0 0 12px; color: var(--mute); font-size: 13px; max-width: 80ch; }
 #ai-result { font-weight: 600; }
 #ai-result.ok { color: var(--ok); }

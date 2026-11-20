@@ -173,3 +173,67 @@ def test_availability_reports_what_is_installed_and_whether_a_key_exists(monkeyp
     got = {p["id"]: p for p in available_providers(AiSettings(api_key=KEY), which=which.get)}
     assert "key set" in got["anthropic-api"]["detail"].lower()
     assert KEY not in str(got)
+
+
+# ---- model lists for the dropdowns
+
+from migration_assistant.llm import list_models
+
+
+def test_claude_cli_can_be_told_which_model_to_use():
+    seen = {}
+
+    def runner(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, '{"a": 1}', "")
+    claude_cli.ask_json("hi", model="sonnet", runner=runner)
+    assert seen["cmd"] == ["claude", "-p", "--model", "sonnet"]
+    claude_cli.ask_json("hi", runner=runner)
+    assert seen["cmd"] == ["claude", "-p"]
+
+
+@pytest.mark.parametrize("model", ["--dangerously-skip-permissions", "a b", "-x"])
+def test_claude_cli_rejects_an_option_looking_model(model):
+    with pytest.raises(ClaudeError, match="model"):
+        claude_cli.ask_json("hi", model=model, runner=proc('{"a": 1}'))
+
+
+def test_cli_models_are_the_claude_code_aliases_with_a_default_first():
+    got = list_models("claude-cli", AiSettings())
+    assert got["models"][0]["id"] == "" and [m["id"] for m in got["models"][1:]] == ["opus", "sonnet", "haiku"]
+
+
+def test_api_models_come_live_from_the_models_api():
+    page = [SimpleNamespace(id="claude-opus-5-5", display_name="Claude Opus 5.5"),
+            SimpleNamespace(id="claude-haiku-5-5", display_name="Claude Haiku 5.5"),
+            SimpleNamespace(id="not-claude", display_name="Other")]
+    client = SimpleNamespace(models=SimpleNamespace(list=lambda **kw: page))
+    got = list_models("anthropic-api", AiSettings(api_key=KEY), client=client)
+    assert got["source"] == "live"
+    assert [m["id"] for m in got["models"]] == ["", "claude-opus-5-5", "claude-haiku-5-5"]
+    assert got["models"][1]["label"] == "Claude Opus 5.5 (claude-opus-5-5)"
+
+
+def test_api_models_fall_back_to_a_built_in_list_when_the_lookup_fails():
+    def boom(**kw):
+        raise RuntimeError(f"nope {KEY}")
+    client = SimpleNamespace(models=SimpleNamespace(list=boom))
+    got = list_models("anthropic-api", AiSettings(api_key=KEY), client=client)
+    ids = [m["id"] for m in got["models"]]
+    assert got["source"] == "fallback" and "claude-opus-5-5" in ids and "claude-sonnet-5-5" in ids
+    assert KEY not in str(got)
+
+
+def test_opencode_models_are_listed_and_grouped_by_provider():
+    out = "\x1b[0mopencode/big-pickle\nanthropic/claude-sonnet-5-5\nanthropic/claude-opus-5-5\n\nwarning: something odd\n"
+    got = list_models("opencode", AiSettings(), runner=proc(out))
+    assert got["source"] == "live"
+    assert [(m["id"], m["group"]) for m in got["models"]] == [
+        ("", "default"), ("opencode/big-pickle", "opencode"), ("anthropic/claude-sonnet-5-5", "anthropic"), ("anthropic/claude-opus-5-5", "anthropic")]
+
+
+def test_opencode_models_report_why_the_list_is_empty():
+    def missing(cmd, **kw):
+        raise FileNotFoundError
+    got = list_models("opencode", AiSettings(), runner=missing)
+    assert [m["id"] for m in got["models"]] == [""] and "not found" in got["error"]

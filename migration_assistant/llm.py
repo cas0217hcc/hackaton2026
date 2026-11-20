@@ -87,7 +87,7 @@ def ask_opencode(prompt: str, model: str = "", timeout: int = 180, runner: Calla
 
 
 BACKENDS: dict[str, Callable[[str, AiSettings], dict]] = {
-    "claude-cli": lambda prompt, s: ask_json(prompt),
+    "claude-cli": lambda prompt, s: ask_json(prompt, model=s.model),
     "anthropic-api": lambda prompt, s: ask_api(prompt, api_key=s.api_key, model=s.model),
     "opencode": lambda prompt, s: ask_opencode(prompt, model=s.model),
 }
@@ -117,3 +117,52 @@ def available_providers(settings: AiSettings, which: Callable = shutil.which) ->
         {"id": "opencode", "label": "opencode", "available": bool(which("opencode")),
          "detail": "uses your opencode setup" if which("opencode") else "`opencode` not found on PATH"},
     ]
+
+
+# ---- model lists for the settings dropdowns
+
+CLI_MODELS = [("", "Default (your Claude Code setting)"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
+# Used when the Models API cannot be reached (no key yet, offline).
+API_FALLBACK_MODELS = [("claude-fable-5-2", "Claude Fable 5.2"), ("claude-opus-5-5", "Claude Opus 5.5"),
+                       ("claude-sonnet-5-5", "Claude Sonnet 5.5"), ("claude-haiku-5-5", "Claude Haiku 5.5")]
+OPENCODE_LINE = re.compile(r"[A-Za-z0-9][\w.\-]*/[\w.\-:/]+")
+
+
+def _entry(model_id: str, label: str, group: str = "") -> dict:
+    return {"id": model_id, "label": label, "group": group}
+
+
+def list_models(provider: str, settings: AiSettings, client=None, runner: Callable = subprocess.run, timeout: int = 30) -> dict:
+    """Models to offer for a provider: {"models": [{id, label, group}], "source": "live"|"fallback"|"static", "error"?}.
+    The first entry has id "" and means the provider's own default."""
+    if provider == "claude-cli":
+        return {"models": [_entry(i, label) for i, label in CLI_MODELS], "source": "static"}
+    if provider == "anthropic-api":
+        default = _entry("", f"Default ({DEFAULT_API_MODEL})")
+        try:
+            import anthropic
+            client = client or anthropic.Anthropic(api_key=settings.api_key or None, timeout=timeout)
+            live = [_entry(m.id, f"{m.display_name} ({m.id})") for m in client.models.list(limit=100) if str(m.id).startswith("claude-")]
+            if live:
+                return {"models": [default] + live, "source": "live"}
+        except Exception:  # no key, offline, or an error: fall through to the built-in list
+            pass
+        return {"models": [default] + [_entry(i, f"{label} ({i})") for i, label in API_FALLBACK_MODELS], "source": "fallback"}
+    if provider == "opencode":
+        default = _entry("", "Default (opencode's own setting)", "default")
+        try:
+            proc = runner(["opencode", "models"], capture_output=True, text=True, timeout=timeout)
+        except FileNotFoundError:
+            return {"models": [default], "source": "fallback", "error": "opencode not found on PATH"}
+        except subprocess.TimeoutExpired:
+            return {"models": [default], "source": "fallback", "error": "opencode took too long to list its models"}
+        if proc.returncode != 0:
+            return {"models": [default], "source": "fallback", "error": "opencode could not list its models"}
+        seen, models = set(), [default]
+        for line in _clean(proc.stdout).splitlines():
+            line = line.strip()
+            if OPENCODE_LINE.fullmatch(line) and line not in seen:
+                seen.add(line)
+                models.append(_entry(line, line.split("/", 1)[1], line.split("/", 1)[0]))
+        return {"models": models, "source": "live"}
+    raise ClaudeError(f"Unknown AI provider '{provider}'.")
