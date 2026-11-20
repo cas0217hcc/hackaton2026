@@ -2,7 +2,18 @@
 
 A local web tool that reads an Azure resource group, works out how each resource maps to [Leaseweb](https://www.leaseweb.com), migrates what maps directly, and plans what does not, including the application code changes that plan needs.
 
-It was built for a hackathon. The idea: many Azure services have no Leaseweb equivalent (Key Vault, Functions, Cosmos DB, Service Bus and so on), so moving a workload is mostly a series of decisions, not a copy. The assistant makes those decisions visible and does the repetitive part.
+## Goal
+
+Built at the Hackathon Portugal 2026 (InfraHack: AI for Cloud Infrastructure), for the challenge *sovereign alternatives for locked-in hyperscale services: can we replace some of them, keep a similar level of automation, and make migration easier?*
+
+Moving a workload off a hyperscaler is mostly a series of decisions, not a copy: many Azure services (Key Vault, Functions, Cosmos DB, Service Bus and so on) have no Leaseweb equivalent. This tool aims to make that move easier:
+
+- **Show** what is running in an Azure resource group and what each resource is configured with.
+- **Decide** for each resource whether it maps directly, has to be rebuilt, or is part of another resource, using rules plus an AI for unknown types.
+- **Automate** the direct part against the Leaseweb API, as a dry run first and live only when you choose.
+- **Plan** the rest: for every resource with no equivalent, an AI proposes a Leaseweb setup, the exact API calls from the OpenAPI specs, and the application code changes it needs.
+
+The AI never gets the last word on what can be called: every Leaseweb operation shown or sent must exist in the vendored OpenAPI specs.
 
 ## What it does
 
@@ -151,6 +162,10 @@ The design and the implementation plan are in `docs/superpowers/`.
 - **Python source only.** Code analysis reads `.py` files, up to about 200 KB in total across the chosen folders.
 - **Single user, local.** There is no authentication, and state is shared by all browser tabs.
 - **AI output needs review.** Plans and code diffs are AI-generated suggestions, not verified migrations.
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and redistribute this project, commercially or not. Third-party material keeps its own terms: the Azure icons are used under Microsoft's terms and the Leaseweb logo is a trademark. [NOTICE](NOTICE) lists them and says how to remove them.
 
 ## Third-party assets
 

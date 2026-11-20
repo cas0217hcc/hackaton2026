@@ -1,0 +1,20 @@
+Azure to Leaseweb Migration Assistant
+Copyright 2026 The Azure to Leaseweb Migration Assistant contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+That licence covers the code and documentation written for this project: migration_assistant/,
+sample_app/, demo_app/, tests/, docs/, the start scripts and the README.
+
+Third-party material in this repository keeps its own terms and is NOT covered by the licence above:
+
+- leaseweb-api/ is a vendored copy of Leaseweb's OpenAPI definitions, licensed under Apache-2.0
+  (see leaseweb-api/LICENSE).
+- migration_assistant/static/azure-icons/ contains icons from Microsoft's Azure Public Service Icons
+  set, used under Microsoft's terms (migration_assistant/static/azure-icons/Microsoft_Terms_of_Use.pdf).
+  They are not open source. To redistribute this project without them, delete that folder: the app
+  falls back to its own line icons.
+- migration_assistant/static/leaseweb-logo.png is the Leaseweb logo, a trademark of Leaseweb. Delete the
+  file to remove it: the app falls back to a built-in mark.
+
+The Python dependencies listed in requirements.txt are installed from PyPI under their own open-source
+licences (MIT, BSD, Apache-2.0, PSF, MPL-2.0).
