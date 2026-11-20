@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Products – list (mock)</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="top">
+  <span class="logo">📦 Products</span>
+  <nav><a class="on" href="index.html">Catalog</a><a href="new.html">New product</a><a href="failures.html">Failure demo</a></nav>
+  <div class="key"><span class="dot"></span>API key set <a href="#" onclick="document.getElementById('keydlg').showModal();return false">change</a></div>
+</header>
+<main>
+  <h1>Catalog</h1>
+  <p class="sub">GET /products — reads straight from Cosmos DB. Writes go through a queue, so changes appear after a few seconds.</p>
+
+  <div class="banner warn">⏳ 2 changes queued, waiting for the worker… <a href="#">Refresh</a> <span style="opacity:.7">(auto-refresh every 3s)</span></div>
+
+  <div class="bar">
+    <div style="width:220px">
+      <select aria-label="Category">
+        <option>All categories</option><option>compute</option><option>storage</option><option>promo</option><option>misc</option>
+      </select>
+    </div>
+    <input class="grow" style="max-width:320px" placeholder="Filter by name (client-side)">
+    <span class="grow"></span>
+    <a class="btn primary" href="new.html">+ New product</a>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Product</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><span class="thumb">🖥️</span><a href="product.html">VPS Small</a></td><td>compute</td><td class="num">€ 7.99</td><td class="num">80</td><td><span class="pill ok">Live</span></td><td><a class="btn sm" href="product.html">Edit</a></td></tr>
+        <tr><td><span class="thumb">🖥️</span><a href="product.html">VPS Large</a></td><td>compute</td><td class="num">€ 39.00</td><td class="num">25</td><td><span class="pill ok">Live</span></td><td><a class="btn sm" href="product.html">Edit</a></td></tr>
+        <tr><td><span class="thumb">🗄️</span><a href="product.html">Object Storage 1TB</a></td><td>storage</td><td class="num">€ 4.50</td><td class="num">—</td><td><span class="pill warn">Applying… (retry 1/3)</span></td><td><a class="btn sm" href="product.html">Edit</a></td></tr>
+        <tr><td><span class="thumb">🎁</span><a href="product.html">Black Friday Bundle</a></td><td>promo</td><td class="num">€ 0.99</td><td class="num">—</td><td><span class="pill">Expires in 1m 42s</span></td><td><a class="btn sm" href="product.html">Edit</a></td></tr>
+        <tr><td><span class="thumb">🖥️</span><a href="product.html">VPS Medium</a></td><td>compute</td><td class="num">€ 15.00</td><td class="num">0</td><td><span class="pill err">Deleted – purging</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="hint" style="margin-top:12px">Showing 5 products · single-partition query when a category is selected.</p>
+  <p class="mock-note">Static mock — data is fake.</p>
+</main>
+
+<dialog id="keydlg" class="card pad" style="max-width:420px">
+  <form method="dialog">
+    <h2 style="margin-top:0">API key</h2>
+    <p class="sub">Required for create / update / delete. Kept in this browser tab only (sessionStorage).</p>
+    <div class="field"><label>X-API-Key</label><input type="password" placeholder="paste key from Key Vault"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn">Cancel</button><button class="btn primary">Save</button></div>
+  </form>
+</dialog>
+</body></html>

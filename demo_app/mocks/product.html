@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product detail (mock)</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="top">
+  <span class="logo">📦 Products</span>
+  <nav><a class="on" href="index.html">Catalog</a><a href="new.html">New product</a><a href="failures.html">Failure demo</a></nav>
+  <div class="key"><span class="dot"></span>API key set</div>
+</header>
+<main>
+  <p class="sub"><a href="index.html">← Catalog</a></p>
+  <div class="bar">
+    <div><h1>VPS Small</h1><span class="sub" style="font-family:monospace;font-size:13px">id 3f2a9c1e-7b4d-4a55-9c0e-1d2f8a6b7c90</span></div>
+    <span class="grow"></span>
+    <button class="btn danger" onclick="show('Delete queued (202). Item will be soft-deleted, then purged by TTL.')">Delete</button>
+  </div>
+
+  <div class="split">
+    <div class="card pad">
+      <div class="img-box"><div class="big">🖥️</div>GET /products/{id}/image<br>(image preview)</div>
+      <div style="margin-top:12px"><button class="btn" style="width:100%" onclick="show('Image uploaded to Blob storage.')">Upload image…</button></div>
+      <p class="hint">PUT raw bytes, <code>image/*</code></p>
+    </div>
+
+    <div class="card pad">
+      <div class="field"><label>Name</label><input value="VPS Small"></div>
+      <div class="grid2">
+        <div class="field"><label>Category</label><input value="compute"><div class="hint">Changing it moves the product to another partition (one command).</div></div>
+        <div class="field"><label>Price (€)</label><input type="number" value="7.99" step="0.01"></div>
+        <div class="field"><label>Stock</label><input type="number" value="80"></div>
+        <div class="field"><label>TTL (seconds, optional)</label><input type="number" placeholder="never expires"></div>
+      </div>
+      <details class="dev field"><summary>Developer options</summary>
+        <div style="margin-top:8px"><label>Simulate failure</label>
+          <select><option>none</option><option>transient (retry after 10s, 20s)</option><option>poison (3 attempts → poison queue)</option></select></div>
+      </details>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <a class="btn" href="index.html">Cancel</a>
+        <button class="btn primary" onclick="show('Update queued (202). Refreshing in a few seconds…')">Save changes</button>
+      </div>
+    </div>
+  </div>
+  <p class="mock-note">Static mock — PUT /products/{id} is update-only (404 if the product no longer exists).</p>
+</main>
+<div class="toast" id="t"></div>
+<script>function show(m){var t=document.getElementById('t');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},3000)}</script>
+</body></html>

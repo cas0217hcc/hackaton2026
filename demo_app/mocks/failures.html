@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Failure demo (mock)</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="top">
+  <span class="logo">📦 Products</span>
+  <nav><a href="index.html">Catalog</a><a href="new.html">New product</a><a class="on" href="failures.html">Failure demo</a></nav>
+  <div class="key"><span class="dot"></span>API key set</div>
+</header>
+<main>
+  <h1>Failure demo</h1>
+  <p class="sub">Fire a write with <code>?simulate=</code> and watch the command travel through the queue.</p>
+
+  <div class="grid2">
+    <div class="card pad">
+      <h3 style="margin-top:0">Transient failure</h3>
+      <p class="sub">Worker fails, re-enqueues with a visibility timeout (10s, 20s…), then succeeds.</p>
+      <button class="btn primary">Send “Object Storage 1TB”</button>
+      <ol style="margin:16px 0 0;padding-left:20px;line-height:2">
+        <li>✅ 202 Accepted — queued</li>
+        <li>✅ Attempt 1 failed → retry in 10s</li>
+        <li>✅ Attempt 2 failed → retry in 20s</li>
+        <li>⏳ Attempt 3 … applying</li>
+        <li style="color:var(--muted)">⬜ Visible in catalog</li>
+      </ol>
+    </div>
+    <div class="card pad">
+      <h3 style="margin-top:0">Poison command</h3>
+      <p class="sub">Runtime retries 3× then moves the message to <code>products-poison</code>.</p>
+      <button class="btn danger">Send “Broken product”</button>
+      <ol style="margin:16px 0 0;padding-left:20px;line-height:2">
+        <li>✅ 202 Accepted — queued</li>
+        <li>✅ Attempt 1 failed</li>
+        <li>✅ Attempt 2 failed</li>
+        <li>✅ Attempt 3 failed</li>
+        <li><span class="pill err">Moved to products-poison</span> — never appears in catalog</li>
+      </ol>
+    </div>
+  </div>
+  <p class="hint" style="margin-top:16px">The UI can only see the final state through GET /products/{id}; step-by-step progress would need a status endpoint (not in the API today) — in the first version this panel would just poll for 404 → 200 and show a timeout for poison.</p>
+  <p class="mock-note">Static mock.</p>
+</main>
+</body></html>
