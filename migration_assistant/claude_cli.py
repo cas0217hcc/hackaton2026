@@ -23,7 +23,9 @@ def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run)
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
     if fence:
         text = fence.group(1).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        raise ClaudeError("claude did not return valid JSON") from None
+    for candidate in (text, text[text.find("{"):text.rfind("}") + 1]):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    raise ClaudeError("claude did not return valid JSON")

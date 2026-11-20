@@ -34,3 +34,8 @@ def test_timeout_raises():
 def test_nonzero_exit_raises():
     with pytest.raises(ClaudeError, match="boom"):
         ask_json("p", runner=fake(code=1))
+
+
+def test_json_surrounded_by_prose():
+    out = 'Here is the plan:\n{"a": {"b": 2}}\nHope that helps.'
+    assert ask_json("p", runner=fake(out)) == {"a": {"b": 2}}
