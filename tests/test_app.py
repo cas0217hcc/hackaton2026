@@ -255,3 +255,28 @@ def test_reset_keeps_key_in_memory_only():
     c.post("/api/key", data={"api_key": KEY})
     c.post("/api/reset")
     assert c.get("/api/state").json()["api_key_set"] is True
+
+
+def test_plan_progress_endpoint_reports_completion():
+    c = client([VM, KV]); run_to_assess(c)
+    idle = c.get("/api/plan/progress").json()
+    assert idle["running"] is False and idle["total"] == 0
+    c.post("/api/plan", data={"source_dirs": ""})
+    p = c.get("/api/plan/progress").json()
+    assert p["running"] is False and p["total"] == 1 and p["done"] == 1
+    assert p["items"] == [{"name": "kv-hack", "status": "done"}]
+
+
+def test_plan_with_one_failed_resource_still_returns_the_others():
+    from migration_assistant.models import Resource as R
+    kv2 = R("/x/kv2", "kv-two", "Microsoft.KeyVault/vaults", "westeurope")
+
+    def ask(prompt):
+        if "kv-two" in prompt:
+            raise ClaudeError("claude timed out after 180s")
+        return plan_answer(prompt)
+    c = client([VM, KV, kv2], ask=ask); run_to_assess(c)
+    r = c.post("/api/plan", data={"source_dirs": ""})
+    assert r.status_code == 200
+    plans = {p["resource_name"]: p for p in r.json()["plans"]}
+    assert plans["kv-hack"]["proposal"] and plans["kv-two"]["warnings"][0].startswith("Plan failed")

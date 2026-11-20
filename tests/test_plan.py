@@ -83,3 +83,42 @@ def test_read_sources_same_folder_name_stays_distinct(tmp_path: Path):
 
 def test_read_sources_empty_list():
     assert read_sources([]) == {}
+
+
+import time
+
+from migration_assistant.plan import FAILED_PREFIX, build_plans
+
+
+def items(n):
+    return [(Assessment(f"r{i}", "rebuild", "T", "why", []), Resource(f"/x/r{i}", f"r{i}", "Microsoft.Foo/bars", "westeurope"))
+            for i in range(n)]
+
+
+def slow_ask(prompt):
+    time.sleep(0.3)
+    return {"proposal": "ok", "lw_operations": [], "code_changes": []}
+
+
+def test_build_plans_runs_in_parallel_and_keeps_order():
+    start = time.time()
+    plans = build_plans(items(4), {}, ask=slow_ask, ops={}, workers=4)
+    assert time.time() - start < 0.9  # serial would take 1.2s
+    assert [p.resource_name for p in plans] == ["r0", "r1", "r2", "r3"]
+
+
+def test_build_plans_partial_failure_keeps_the_rest():
+    def ask(prompt):
+        if "r1" in prompt:
+            raise ClaudeError("claude timed out after 180s")
+        return {"proposal": "ok", "lw_operations": [], "code_changes": []}
+    plans = build_plans(items(3), {}, ask=ask, workers=3)
+    assert [p.proposal for p in plans] == ["ok", "", "ok"]
+    assert plans[1].warnings[0].startswith(FAILED_PREFIX) and "timed out" in plans[1].warnings[0]
+
+
+def test_build_plans_reports_progress_for_every_resource():
+    events = []
+    build_plans(items(3), {}, ask=slow_ask, workers=3, on_progress=lambda name, status: events.append((name, status)))
+    for name in ("r0", "r1", "r2"):
+        assert (name, "running") in events and (name, "done") in events

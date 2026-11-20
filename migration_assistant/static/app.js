@@ -246,6 +246,8 @@ function renderAssess(assessments) {
   setLocked("plan", false);
 }
 
+const failedPlan = (p) => !p.proposal && p.warnings.length > 0 && p.warnings[0].startsWith("Plan failed");
+
 function renderPlan(plans, message) {
   const out = $("plan-out");
   if (!plans.length) {
@@ -253,8 +255,8 @@ function renderPlan(plans, message) {
   } else {
     out.replaceChildren(...plans.map((p) => {
       const card = el("details", { class: "plan", open: "" },
-        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
-      const box = el("div", { class: "plan-body" }, el("p", { class: "summary" }, p.proposal));
+        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
+      const box = el("div", { class: "plan-body" }, failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
       card.append(box);
       if (p.steps.length) {
         box.append(el("h4", {}, "Migration steps"), el("ol", { class: "steps-list" }, ...p.steps.map((t) => el("li", {}, t))));
@@ -459,10 +461,44 @@ function addFolder(value = "") {
   refreshFolders();
 }
 
+// Poll the server while plans are generated in parallel and show a progress bar.
+function startPlanProgress(out) {
+  const label = el("div", { class: "progress-label" }, "Starting...");
+  const fill = el("div", { class: "progress-fill" });
+  const bar = el("div", { class: "progress-track", role: "progressbar", "aria-label": "Plan generation progress", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }, fill);
+  const list = el("div", { class: "progress-items" });
+  out.replaceChildren(el("div", { class: "progress" }, label, bar, list));
+  let stopped = false;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const p = await (await fetch("/api/plan/progress")).json();
+      if (stopped) return;
+      if (p.total) {
+        const pct = Math.round((p.done / p.total) * 100);
+        fill.style.width = pct + "%";
+        bar.setAttribute("aria-valuenow", String(pct));
+        const working = p.items.filter((i) => i.status === "running").map((i) => i.name);
+        label.textContent = `${p.done} of ${p.total} plans done` + (working.length ? ` - working on ${working.slice(0, 3).join(", ")}${working.length > 3 ? ", ..." : ""}` : "");
+        list.replaceChildren(...p.items.map((i) => el("span", { class: "chip status-" + i.status }, i.name)));
+      }
+    } catch (e) { /* keep polling; the main request reports real errors */ }
+    if (!stopped) setTimeout(tick, 700);
+  };
+  tick();
+  return () => { stopped = true; };
+}
+
 async function plan() {
   const form = new URLSearchParams();
   folderInputs().map((i) => i.value.trim()).filter(Boolean).forEach((v) => form.append("source_dirs", v));
-  const data = await call("/api/plan", form, $("plan-out"), plan);
+  const submit = $("plan-form").querySelector("button[type=submit]");
+  submit.disabled = true;
+  const pending = call("/api/plan", form, $("plan-out"), plan);
+  const stop = startPlanProgress($("plan-out"));
+  const data = await pending;
+  stop();
+  submit.disabled = false;
   if (!data) return;
   invalidateAfter("plan");
   renderPlan(data.plans, data.message);

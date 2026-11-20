@@ -1,4 +1,5 @@
 import json
+import threading
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Callable
@@ -15,7 +16,7 @@ from .claude_cli import ClaudeError, ask_json
 from .dryrun import DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_operations
-from .plan import build_plan, read_sources
+from .plan import FAILED_PREFIX, build_plans, read_sources
 
 HERE = Path(__file__).parent
 DEFAULT_RG = "hackaton-2026-rg"
@@ -59,6 +60,8 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     state = _load(state_file)
+    progress: dict = {"running": False, "items": []}  # live status of the current plan run
+    progress_lock = threading.Lock()
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     ops = load_operations()
 
@@ -142,12 +145,36 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         state["source_dirs"] = dirs
         source = read_sources([Path(d) for d in dirs])
         by_name = {r.name: r for r in state["resources"]}
+
+        def on_progress(name: str, status: str) -> None:
+            with progress_lock:
+                for item in progress["items"]:
+                    if item["name"] == name:
+                        item["status"] = status
+
+        with progress_lock:
+            progress["running"] = True
+            progress["items"] = [{"name": a.resource_name, "status": "pending"} for a in rebuild]
         try:
-            state["plans"] = [build_plan(a, by_name[a.resource_name], source, ask=ask, ops=ops) for a in rebuild]
-        except ClaudeError as e:
-            return error(str(e))
+            plans = build_plans([(a, by_name[a.resource_name]) for a in rebuild], source, ask=ask, ops=ops,
+                                on_progress=on_progress)
+        finally:
+            with progress_lock:
+                progress["running"] = False
+        failed = [p for p in plans if p.warnings and p.warnings[0].startswith(FAILED_PREFIX)]
+        if len(failed) == len(plans):  # nothing usable: report the problem and allow retry
+            return error(failed[0].warnings[0][len(FAILED_PREFIX):])
+        state["plans"] = plans
         save()
-        return {"plans": [asdict(p) for p in state["plans"]], "message": ""}
+        return {"plans": [asdict(p) for p in plans], "message": ""}
+
+    @app.get("/api/plan/progress")
+    def api_plan_progress():
+        with progress_lock:
+            items = [dict(i) for i in progress["items"]]
+            running = progress["running"]
+        return {"running": running, "total": len(items),
+                "done": sum(1 for i in items if i["status"] in ("done", "failed")), "items": items}
 
     def executor():
         key = secrets["api_key"]

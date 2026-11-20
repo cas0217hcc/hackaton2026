@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
 
@@ -35,6 +36,42 @@ def read_sources(dirs: list[Path], max_bytes: int = 200_000) -> dict[str, str]:
             out[f"{prefix}/{rel}"] = text
             used += len(text)
     return out
+
+
+FAILED_PREFIX = "Plan failed: "
+
+
+def build_plans(
+    items: list[tuple[Assessment, Resource]],
+    source: dict[str, str],
+    ask: Callable = ask_json,
+    ops: dict | None = None,
+    workers: int = 4,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> list[Plan]:
+    """Build one plan per (assessment, resource) in parallel, keeping input order.
+
+    A failed resource gets a placeholder plan whose first warning starts with FAILED_PREFIX,
+    so one slow or failing call never discards the others.
+    """
+    ops = ops if ops is not None else load_operations()
+
+    def one(item: tuple[Assessment, Resource]) -> Plan:
+        assessment, resource = item
+        if on_progress:
+            on_progress(resource.name, "running")
+        try:
+            plan = build_plan(assessment, resource, source, ask=ask, ops=ops)
+        except ClaudeError as e:
+            if on_progress:
+                on_progress(resource.name, "failed")
+            return Plan(resource.name, "", [], [], [], [FAILED_PREFIX + str(e)])
+        if on_progress:
+            on_progress(resource.name, "done")
+        return plan
+
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items) or 1))) as pool:
+        return list(pool.map(one, items))
 
 
 def build_plan(

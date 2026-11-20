@@ -130,6 +130,7 @@ tr.detail > td { padding: 0; background: #f9fbfc; }
 .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .pill.direct { background: var(--ok-bg); color: var(--ok); }
 .pill.rebuild { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
 .pill.included { background: #e9edf1; color: var(--mute); }
 .summary-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
 .stat { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 14px; border-radius: 8px; font-weight: 600; }
@@ -138,6 +139,17 @@ tr.detail > td { padding: 0; background: #f9fbfc; }
 .stat.rebuild { background: var(--warn-bg); color: var(--warn); }
 .stat.included { background: #e9edf1; color: var(--mute); }
 .count { margin: 0 0 12px; color: var(--mute); }
+
+/* Progress */
+.progress { padding: 8px 0 24px; }
+.progress-label { margin-bottom: 8px; font-weight: 600; }
+.progress-track { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.progress-fill { width: 0; height: 100%; background: var(--acc); border-radius: 999px; transition: width 300ms ease-out; }
+.progress-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.chip.status-running { background: var(--acc-tint); border-color: var(--acc); color: var(--acc-dark); }
+.chip.status-done { background: var(--ok-bg); border-color: #b9dcc4; color: var(--ok); }
+.chip.status-failed { background: var(--bad-bg); border-color: #e8c4c4; color: var(--bad); }
+@media (prefers-reduced-motion: reduce) { .progress-fill { transition: none; } }
 
 /* States */
 .empty { color: var(--mute); padding: 20px 0 28px; }
