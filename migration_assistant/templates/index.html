@@ -21,7 +21,7 @@
   </div>
   <div class="top-actions">
     <span class="mode" id="mode" role="status"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
-    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI)</button>
+    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI) · default model</button>
     <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">Leaseweb key</button>
     <button class="btn ghost" id="reset-btn" type="button">Start over</button>
   </div>
@@ -43,7 +43,7 @@
       <label for="ai-provider">AI used for assessments and plans</label>
       <select id="ai-provider"></select>
     </div>
-    <div class="ai-row" id="ai-model-row" hidden>
+    <div class="ai-row" id="ai-model-row">
       <label for="ai-model">Model</label>
       <select id="ai-model"></select>
       <span class="ai-note" id="ai-model-note"></span>

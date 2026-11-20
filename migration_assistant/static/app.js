@@ -380,18 +380,29 @@ function renderDiscover(resources) {
 }
 
 // Route filter on the Assess table: the chips toggle routes; nothing selected shows everything.
-function renderAssess(assessments) {
+function needsCell(a) {
+  if (a.route === "included") return el("td", { class: "sub" }, "With its owner");
+  const deps = a.dependencies || [];
+  const step = el("div", { class: "step-no" }, `Step ${(a.wave ?? 0) + 1}`);
+  if (!deps.length) return el("td", {}, step, el("div", { class: "sub" }, "Nothing"));
+  return el("td", {}, step, el("ul", { class: "deps" }, ...deps.map((d) =>
+    el("li", { title: d.reason }, d.name, d.source === "ai" ? el("span", { class: "dep-ai", title: "Suggested by the AI: " + d.reason }, "AI") : ""))));
+}
+
+function renderAssess(assessments, message = "") {
   const picked = new Set();
   let query = "";
   const entries = assessments.map((a) => {
     const r = resourceByName[a.resource_name];
     const source = typeName(resourceTypes[a.resource_name] || "");
     const sub = r ? headline(r) : "";
+    const deps = (a.dependencies || []).map((d) => d.name);
     const tr = el("tr", { "data-route": a.route }, el("td", {}, resCell(a.resource_name)),
       el("td", { title: resourceTypes[a.resource_name] || "" }, source, ...(sub ? [el("div", { class: "headline" }, sub)] : [])),
-      el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale));
-    tr.dataset.text = [a.resource_name, source, a.target, a.rationale, LABELS[a.route]].join(" ").toLowerCase();
-    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, a.rationale] };
+      el("td", {}, a.target), el("td", {}, pill(a.route)), needsCell(a), el("td", { class: "sub" }, a.rationale));
+    tr.dataset.text = [a.resource_name, source, a.target, a.rationale, LABELS[a.route], ...deps].join(" ").toLowerCase();
+    const needs = a.route === "included" ? "" : `Step ${(a.wave ?? 0) + 1} ${deps.join(" ")}`;
+    return { rows: [tr], values: [a.resource_name, source, a.target, LABELS[a.route] || a.route, needs, a.rationale] };
   });
   const rows = entries.map((e) => e.rows[0]);
   const search = el("input", { type: "search", class: "filter-search", placeholder: "Search name, source, target or reason", "aria-label": "Search the assessment table", autocomplete: "off", spellcheck: "false" });
@@ -423,8 +434,10 @@ function renderAssess(assessments) {
   $("assess-out").replaceChildren(
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included"), search, note, clear),
     el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
-      el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately."),
-    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Why"], entries));
+      el("b", {}, "Included"), " is part of another resource (a VM's network interface, disk or public IP, or a private endpoint's network interface), so there is nothing to migrate separately. ",
+      el("b", {}, "Needs first"), " lists the resources that must exist on Leaseweb before this one is created. Manual and Automatic migration follow this order."),
+    ...(message ? [el("p", { class: "note", role: "status" }, message)] : []),
+    sortableTable(["Resource", "Azure source", "Leaseweb target", "Route", "Needs first", "Why"], entries));
   done.assess = true;
   setLocked("plan", false);
 }
@@ -828,6 +841,12 @@ const AI_HELP = {
 let aiState = null;
 const modelLists = {};  // provider -> {models, source, error}, filled on first use
 
+// What the header shows: the provider and the model it will use right now.
+function aiModelText(s) {
+  if (s.effective_model) return s.effective_model;
+  return s.provider === "opencode" ? "opencode's default model" : "default model";
+}
+
 function aiLabel(s) { return (s.providers.find((p) => p.id === s.provider) || {}).label || s.provider; }
 
 function renderAi(s) {
@@ -835,7 +854,8 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-btn").textContent = "AI: " + aiLabel(s);
+  $("ai-btn").textContent = `AI: ${aiLabel(s)} · ${aiModelText(s)}`;
+  $("ai-btn").title = "Change the AI provider and model";
   syncAiForm(s.provider);
   $("ai-key-remove").hidden = !s.api_key_set;
   $("ai-key").placeholder = s.api_key_set ? "Key is set. Paste a new one to replace it." : "Paste your Anthropic API key";
@@ -1002,7 +1022,7 @@ async function assess() {
   const data = await call("/api/assess", null, $("assess-out"), assess);
   if (!data) return;
   invalidateAfter("assess");
-  renderAssess(data.assessments);
+  renderAssess(data.assessments, data.message);
   show("assess");
 }
 

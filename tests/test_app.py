@@ -558,3 +558,48 @@ def test_pick_folder_error_is_reported():
     c = TestClient(create_app(discover=lambda rg: [], ask=plan_answer, state_file=None, pick_folder=pick))
     r = c.post("/api/pick-folder")
     assert r.status_code == 500 and r.json()["error"] == "no Tk"
+
+
+# ---- the AI choice survives a restart (the key does not)
+
+def ai_app(tmp_path, **kw):
+    return TestClient(create_app(state_file=tmp_path / "s.json", discover=lambda rg: [VM, KV], **kw))
+
+
+def test_ai_choice_is_remembered_across_a_restart(tmp_path):
+    c = ai_app(tmp_path)
+    c.post("/api/ai", data={"provider": "opencode", "model": "anthropic/claude-sonnet-5-5"})
+    again = ai_app(tmp_path).get("/api/ai").json()
+    assert again["provider"] == "opencode" and again["model"] == "anthropic/claude-sonnet-5-5"
+
+
+def test_the_api_key_is_never_written_to_disk(tmp_path):
+    c = ai_app(tmp_path)
+    c.post("/api/ai", data={"provider": "anthropic-api", "model": "claude-sonnet-5-5", "api_key": SECRET})
+    saved = (tmp_path / "ai.json").read_text()
+    assert SECRET not in saved and "api_key" not in saved
+    assert ai_app(tmp_path).get("/api/ai").json()["api_key_set"] is False
+
+
+def test_a_damaged_ai_settings_file_falls_back_to_the_default(tmp_path):
+    (tmp_path / "ai.json").write_text("{not json")
+    assert ai_app(tmp_path).get("/api/ai").json()["provider"] == "claude-cli"
+    (tmp_path / "ai.json").write_text('{"provider": "nope", "model": 5}')
+    assert ai_app(tmp_path).get("/api/ai").json()["provider"] == "claude-cli"
+
+
+def test_start_over_keeps_the_ai_choice(tmp_path):
+    c = ai_app(tmp_path)
+    c.post("/api/ai", data={"provider": "opencode", "model": ""})
+    c.post("/api/reset")
+    assert ai_app(tmp_path).get("/api/ai").json()["provider"] == "opencode"
+
+
+def test_the_effective_model_is_reported_for_the_header():
+    c, _ = ai_client()
+    c.post("/api/ai", data={"provider": "anthropic-api", "model": ""})
+    assert c.get("/api/ai").json()["effective_model"] == "claude-opus-5-5"
+    c.post("/api/ai", data={"provider": "anthropic-api", "model": "claude-sonnet-5-5"})
+    assert c.get("/api/ai").json()["effective_model"] == "claude-sonnet-5-5"
+    c.post("/api/ai", data={"provider": "claude-cli", "model": ""})
+    assert c.get("/api/ai").json()["effective_model"] == ""

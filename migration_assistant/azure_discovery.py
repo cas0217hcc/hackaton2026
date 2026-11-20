@@ -8,6 +8,11 @@ from typing import Any, Callable
 from .models import Resource
 
 
+def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    """subprocess.run with the executable resolved first, so Windows finds az.cmd (subprocess ignores PATHEXT)."""
+    return subprocess.run([shutil.which(cmd[0]) or cmd[0], *cmd[1:]], **kw)
+
+
 class DiscoveryError(Exception):
     pass
 
