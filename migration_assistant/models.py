@@ -18,6 +18,10 @@ class Assessment:
     target: str
     rationale: str
     lw_operations: list[str] = field(default_factory=list)
+    # [{"name": resource it needs first, "reason": str, "source": "config"|"ai"}]
+    dependencies: list[dict] = field(default_factory=list)
+    # creation order: 0 needs nothing, n needs something from wave n-1. None for included resources.
+    wave: int | None = None
 
 
 @dataclass

@@ -1,10 +1,16 @@
 import json
 import re
+import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from .models import Resource
+
+
+def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    """subprocess.run with the executable resolved first, so Windows finds az.cmd (subprocess ignores PATHEXT)."""
+    return subprocess.run([shutil.which(cmd[0]) or cmd[0], *cmd[1:]], **kw)
 
 
 class DiscoveryError(Exception):
@@ -34,7 +40,7 @@ def _details(resource_id: str, runner: Callable) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def list_resources(resource_group: str, runner: Callable = subprocess.run) -> list[Resource]:
+def list_resources(resource_group: str, runner: Callable = _run) -> list[Resource]:
     """Read-only: list resources of an Azure resource group via the az CLI."""
     try:
         proc = runner(
@@ -57,7 +63,7 @@ def list_resources(resource_group: str, runner: Callable = subprocess.run) -> li
     ]
 
 
-def list_resource_groups(runner: Callable = subprocess.run) -> list[dict]:
+def list_resource_groups(runner: Callable = _run) -> list[dict]:
     """Resource groups the az login can see, sorted by name (case-insensitive). Read-only."""
     try:
         proc = runner(["az", "group", "list", "--query", "[].{name:name,location:location}", "-o", "json"],

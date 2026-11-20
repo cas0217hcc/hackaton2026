@@ -58,8 +58,18 @@ def _last(resource_id: str, kind: str) -> str:
     return m.group(1) if m else ""
 
 
+def owner_name(r: Resource) -> str:
+    """Name of the resource a folded NIC, disk or public IP belongs to, or ''."""
+    return _owner_ref(r)[1]
+
+
 def _owner(r: Resource) -> str:
     """What a folded NIC, disk or public IP belongs to, read from its configuration."""
+    kind, name = _owner_ref(r)
+    return f"{kind} {name}" if name else ""
+
+
+def _owner_ref(r: Resource) -> tuple[str, str]:
     props = r.properties or {}
     inner = props.get("properties") or {}
     candidates = [
@@ -70,8 +80,8 @@ def _owner(r: Resource) -> str:
     ]
     for kind, name in candidates:
         if name:
-            return f"{kind} {name}"
-    return ""
+            return kind, name
+    return "", ""
 
 
 def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None = None) -> list[Assessment]:

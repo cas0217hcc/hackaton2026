@@ -86,6 +86,9 @@ def build_plan(
     ans = ask(
         f"Azure resource {resource.name} ({resource.type}) has no direct Leaseweb equivalent.\n"
         f"Proposed target: {assessment.target}. Reason: {assessment.rationale}\n"
+        + (f"It can only be created after these resources exist on Leaseweb: "
+           + "; ".join(f"{d['name']} ({d['reason']})" for d in assessment.dependencies)
+           + ". Order the steps accordingly.\n" if assessment.dependencies else "") +
         f"Propose the Leaseweb infrastructure replacement, using ONLY these Leaseweb operationIds: "
         f"{', '.join(sorted(ops))}.\n"
         f"Then list the application code changes needed, as unified diffs, for this Python source. "
