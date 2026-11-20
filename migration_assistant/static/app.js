@@ -254,13 +254,23 @@ const TYPE_NAMES = {
   "microsoft.network/networkinterfaces": "Network interface (NIC)",
   "microsoft.compute/virtualmachines": "Virtual machine",
   "microsoft.compute/disks": "Managed disk",
-  "microsoft.storage/storageaccounts": "Storage account (blobs, files)",
+  "microsoft.storage/storageaccounts": "Storage account",
   "microsoft.keyvault/vaults": "Key Vault (secrets and keys)",
   "microsoft.eventgrid/systemtopics": "Event Grid system topic (event routing)",
   "microsoft.web/sites": "App Service / Function App",
   "microsoft.documentdb/databaseaccounts": "Cosmos DB account",
   "microsoft.servicebus/namespaces": "Service Bus namespace (messaging)",
   "microsoft.sql/servers": "Azure SQL server",
+  "microsoft.web/serverfarms": "App Service plan",
+  "microsoft.managedidentity/userassignedidentities": "Managed identity",
+  "microsoft.insights/components": "Application Insights",
+  "microsoft.operationalinsights/workspaces": "Log Analytics workspace",
+  "microsoft.network/privateendpoints": "Private endpoint",
+  "microsoft.network/privatednszones": "Private DNS zone",
+  "microsoft.network/privatednszones/virtualnetworklinks": "Private DNS zone link",
+  "microsoft.app/containerapps": "Container App",
+  "microsoft.app/managedenvironments": "Container Apps environment",
+  "microsoft.containerregistry/registries": "Container registry",
 };
 
 // Unknown types fall back to the readable last segment, e.g. "fooBars" -> "Foo bars".
@@ -392,6 +402,12 @@ function headline(r) {
   if (t === "microsoft.compute/virtualmachines" && inner.hardwareProfile && inner.hardwareProfile.vmSize) return "Size: " + inner.hardwareProfile.vmSize;
   if (t === "microsoft.compute/disks") return [inner.diskSizeGB && inner.diskSizeGB + " GB", p.sku && p.sku.name].filter(Boolean).join(", ");
   if (t === "microsoft.network/virtualnetworks" && inner.addressSpace) return "Address space: " + (inner.addressSpace.addressPrefixes || []).join(", ");
+  if (t === "microsoft.storage/storageaccounts" && p.services) {
+    // What the account holds decides its route: blobs alone map to a bucket, queues do not.
+    const parts = [["containers", "blob containers"], ["queues", "queues"], ["tables", "tables"], ["shares", "file shares"]]
+      .filter(([k]) => (p.services[k] || []).length).map(([k, label]) => `${p.services[k].length} ${label}`);
+    return parts.length ? "Holds " + listOf(parts) : "Empty";
+  }
   if (p.sku && p.sku.name) return "SKU: " + p.sku.name + (p.sku.tier ? " (" + p.sku.tier + ")" : "");
   return "";
 }
@@ -567,8 +583,7 @@ function refreshMode() {
   $("mode-text").textContent = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
   $("mode").classList.toggle("live", live);
   $("liveband").hidden = !live;
-  $("key-btn").textContent = live ? "Leaseweb key set" : "Leaseweb key";
-  $("key-remove").hidden = !live;
+  renderKeyConn();
   $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
   $("migrate-btn").classList.toggle("danger", live);
   $("migrate-title").textContent = live ? "Automatic migration (LIVE)" : "Automatic migration (dry run)";
@@ -1054,6 +1069,7 @@ function withCode(text) {
   return text.split("`").map((part, i) => (i % 2 ? el("code", {}, part) : part));
 }
 let aiState = null;
+let aiTested = false;  // the selected provider answered a test request in this page
 const modelLists = {};  // provider -> {models, source, error}, filled on first use
 
 // What the header shows: the provider and the model it will use right now.
@@ -1069,8 +1085,11 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-btn").replaceChildren("AI: " + aiLabel(s), el("span", { class: "ai-model" }, aiModelText(s)));
-  $("ai-btn").title = "Change the AI provider and model";
+  $("ai-btn-text").replaceChildren("AI: " + aiLabel(s), el("span", { class: "ai-model" }, aiModelText(s)));
+  $("ai-btn").title = s.problem ? s.problem : "Change the AI provider and model";
+  setDot("ai-dot", s.problem ? "bad" : aiTested ? "ok" : "ready");
+  renderChecks();
+  refreshGates();
   syncAiForm(s.provider);
   $("ai-key-remove").hidden = !s.api_key_set;
   $("ai-key").placeholder = s.api_key_set ? "Key is set. Paste a new one to replace it." : "Paste your Anthropic API key";
@@ -1133,6 +1152,7 @@ async function saveAi(e) {
   catch (err) { setAiResult("Could not save. Check the server.", false); return false; }
   if (!res.ok) { setAiResult(data.error || "Could not save.", false); return false; }
   delete modelLists["anthropic-api"];  // a new key can unlock the live model list
+  aiTested = false;  // a changed setup has not been tested yet
   renderAi(data);
   setAiResult("Saved.", true);
   return true;
@@ -1152,6 +1172,8 @@ async function testAi() {
     const res = await fetch("/api/ai/test", { method: "POST" });
     const data = await res.json();
     setAiResult(res.ok ? `Works: ${aiLabel(aiState)} answered.` : data.error || "Test failed.", res.ok);
+    aiTested = res.ok;
+    renderAi(aiState);
   } catch (err) { setAiResult("Request failed. Check the server.", false); }
   setLoading($("ai-test"), false);
 }
@@ -1161,29 +1183,240 @@ async function removeAiKey() {
   catch (err) { setAiResult("Could not remove the key.", false); }
 }
 
+let keyVerified = null;  // true once Leaseweb accepted the key; null when unknown
+
+function setKeyResult(text, ok) {
+  const r = $("key-result");
+  r.textContent = text || "";
+  r.className = "bar-result " + (text ? (ok ? "ok" : "bad") : "");
+}
+
+// The Leaseweb chip and panel: no key (dry run), a key Leaseweb accepted, or a key not confirmed yet.
+function renderKeyConn() {
+  setDot("key-dot", !live ? "idle" : keyVerified ? "ok" : "warn");
+  $("key-btn-text").textContent = !live ? "Leaseweb: no key" : keyVerified ? "Leaseweb: live, key verified" : "Leaseweb: live, key not verified";
+  $("key-state").textContent = !live ? "No key is set, so every run is a dry run and nothing is sent."
+    : keyVerified ? "A key is set and Leaseweb accepted it. Runs in Automatic migration are LIVE."
+    : "A key is set, but Leaseweb has not confirmed it yet. Runs in Automatic migration are LIVE.";
+  $("key-test").hidden = !live;
+  $("key-remove").hidden = !live;
+  $("key-save").textContent = live ? "Replace and verify" : "Save and verify";
+  renderChecks();
+}
+
+function clearPrices() { Object.keys(priceCache).forEach((k) => delete priceCache[k]); }
+
 async function setKey(e) {
   e.preventDefault();
   const input = $("api-key");
   const value = input.value;
   input.value = "";  // clear immediately: the key is never kept in the page
-  if (!value.trim()) return;
+  if (!value.trim()) { setKeyResult("Paste a key first.", false); input.focus(); return; }
+  setLoading($("key-save"), true, "Verifying...");
   try {
     const res = await fetch("/api/key", { method: "POST", body: new URLSearchParams({ api_key: value }) });
     if (!res.ok) throw new Error();
-  } catch (err) { setError("Could not save the API key.", null); return; }
-  setError("");
+  } catch (err) {
+    setLoading($("key-save"), false);
+    setKeyResult("Could not save the key. Check that the server is running.", false);
+    return;
+  }
   live = true;
+  keyVerified = null;
   optionsCache = null;  // regions come live from Leaseweb once a key is set
-  $("keybar").hidden = true;
-  $("key-btn").setAttribute("aria-expanded", "false");
+  clearPrices();
+  await verifyKey();
+  setLoading($("key-save"), false);
+  renderKeyConn();
+}
+
+// Ask the server to check the key against Leaseweb. A rejected key is removed by the server, so the app stays in dry run.
+async function verifyKey() {
+  let res, data;
+  setKeyResult("Checking the key with Leaseweb...", true);
+  try { res = await fetch("/api/key/test", { method: "POST" }); data = await res.json(); }
+  catch (err) { setKeyResult("Could not reach the server to verify the key.", false); refreshMode(); return; }
+  if (!res.ok) {
+    live = false;
+    keyVerified = null;
+    setKeyResult(data.error || "The key could not be verified.", false);
+  } else {
+    live = !!data.api_key_set;
+    keyVerified = data.key_verified;
+    setKeyResult(data.detail || "", data.key_verified === true);
+    if (data.key_verified) closePanel("key-btn", "keybar");
+  }
   refreshMode();
 }
 
 async function removeKey() {
   try { await fetch("/api/key", { method: "DELETE" }); } catch (err) { setError("Could not remove the API key.", null); return; }
   live = false;
+  keyVerified = null;
   optionsCache = null;
+  clearPrices();
+  setKeyResult("Key removed. Every run is a dry run again.", true);
   refreshMode();
+}
+
+// ---- header connection panels: one open at a time
+const PANELS = [["azure-btn", "azurebar", "az-check"], ["ai-btn", "aibar", "ai-provider"], ["key-btn", "keybar", "api-key"]];
+
+function setDot(id, state) { $(id).className = "dot " + state; }
+
+function closePanel(btnId, barId) {
+  $(barId).hidden = true;
+  $(btnId).setAttribute("aria-expanded", "false");
+}
+
+function openPanel(barId) {
+  PANELS.forEach(([b, bar, focus]) => {
+    const open = bar === barId;
+    $(bar).hidden = !open;
+    $(b).setAttribute("aria-expanded", String(open));
+    if (open) { $(focus).focus(); $(bar).scrollIntoView({ block: "nearest" }); }
+  });
+}
+
+function togglePanel(barId) {
+  if ($(barId).hidden) openPanel(barId); else PANELS.filter(([, bar]) => bar === barId).forEach(([b, bar]) => closePanel(b, bar));
+}
+
+// ---- Azure connection: is az installed and signed in, and which subscription Discover reads
+let azureState = null;  // /api/azure answer; null while checking
+let azureSubs = [];     // [{id, name, is_default}]
+
+const selectedSub = () => {
+  if (!azureState || !azureState.signed_in) return null;
+  return azureSubs.find((x) => x.id === azureState.selected_subscription) || azureState.subscription;
+};
+
+async function loadAzure(manual) {
+  azureState = null;
+  renderAzure();
+  if (manual) setLoading($("az-check"), true, "Checking...");
+  try {
+    const res = await fetch("/api/azure");
+    azureState = await res.json();
+    if (!res.ok) throw new Error(azureState.error);
+  } catch (e) {
+    azureState = { installed: false, signed_in: false, message: "Could not ask the server about Azure. Check that it is running.", selected_subscription: "" };
+  }
+  if (manual) setLoading($("az-check"), false);
+  renderAzure();
+  $("az-result").textContent = manual ? (azureState.signed_in ? "Signed in." : "Still not ready.") : "";
+  $("az-result").className = "bar-result " + (manual ? (azureState.signed_in ? "ok" : "bad") : "");
+  if (azureState.signed_in) {
+    await loadSubscriptions();
+    loadGroups();
+  }
+}
+
+function renderAzure() {
+  const s = azureState;
+  const ok = !!(s && s.signed_in);
+  const sub = selectedSub();
+  setDot("azure-dot", !s ? "idle" : ok ? "ok" : "bad");
+  $("azure-btn-text").textContent = !s ? "Azure: checking..." : ok ? `Azure: ${sub ? sub.name : "signed in"}` : !s.installed ? "Azure: CLI missing" : "Azure: not signed in";
+  $("azure-btn").title = ok ? `Signed in as ${s.user}` : s ? s.message : "";
+  $("az-status").replaceChildren(...(!s ? ["Checking..."] : ok
+    ? ["Signed in as ", el("b", {}, s.user || "unknown user"), ". Default subscription: ", el("b", {}, s.subscription.name), "."]
+    : withCode(s.message)));
+  $("az-help").replaceChildren(...withCode(!s ? "" : ok
+    ? "Discover and the resource group list read the subscription chosen here. Your `az` default is not changed."
+    : !s.installed ? "Install the Azure CLI from https://aka.ms/azcli, run `az login` in a terminal on this machine, then click Check again."
+    : "The sign-in has to be on the machine that runs this server, in the same user account."));
+  $("az-sub-row").hidden = !ok || !azureSubs.length;
+  renderChecks();
+  refreshGates();
+}
+
+async function loadSubscriptions() {
+  try {
+    const res = await fetch("/api/azure/subscriptions");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    azureSubs = data.subscriptions || [];
+  } catch (e) { azureSubs = []; }
+  const sel = $("az-sub");
+  sel.replaceChildren(...azureSubs.map((x) => el("option", { value: x.id }, `${x.name}${x.is_default ? " (az default)" : ""} - ${x.id.slice(0, 8)}...`)));
+  const sub = selectedSub();
+  if (sub) sel.value = sub.id;
+  renderAzure();
+}
+
+async function saveSubscription() {
+  const id = $("az-sub").value;
+  const btn = $("az-sub-save");
+  setLoading(btn, true, "Saving...");
+  let res, data;
+  try { res = await fetch("/api/azure/subscription", { method: "POST", body: new URLSearchParams({ subscription_id: id }) }); data = await res.json(); }
+  catch (e) { res = null; }
+  setLoading(btn, false);
+  const r = $("az-result");
+  if (!res || !res.ok) { r.textContent = (data && data.error) || "Could not change the subscription."; r.className = "bar-result bad"; return; }
+  azureState.selected_subscription = data.selected;
+  renderAzure();
+  r.textContent = Object.keys(resourceByName).length
+    ? "Subscription changed. Discover again to read resources from it." : "Subscription changed.";
+  r.className = "bar-result ok";
+  loadGroups();
+}
+
+// ---- readiness: what each stage needs, shown on Discover and enforced on the buttons
+function checkItem(state, title, need, detail, label, barId) {
+  const btn = el("button", { type: "button", class: "btn secondary" }, label);
+  btn.addEventListener("click", () => openPanel(barId));
+  const word = { ok: "Ready", bad: "Action needed", warn: "Check", idle: state === "idle" && title === "Leaseweb" ? "Optional" : "Checking", ready: "Ready" }[state];
+  return el("div", { class: "check " + state },
+    el("div", { class: "check-head" }, el("i", { class: "dot " + state, "aria-hidden": "true" }), el("span", { class: "check-title" }, title),
+      el("span", { class: "check-state" }, word)),
+    el("p", { class: "check-need" }, need),
+    el("p", { class: "check-detail" }, ...withCode(detail)),
+    btn);
+}
+
+function renderChecks() {
+  const box = $("checks");
+  if (!box) return;
+  const az = azureState, ai = aiState;
+  const sub = selectedSub();
+  const azure = checkItem(!az ? "idle" : az.signed_in ? "ok" : "bad", "Azure", "Required to discover resources",
+    !az ? "Checking the Azure CLI sign-in..." : az.signed_in ? `Signed in as ${az.user}. Subscription: ${sub ? sub.name : "default"}.` : az.message,
+    az && az.signed_in ? "Change subscription" : "Fix Azure sign-in", "azurebar");
+  const aiItem = checkItem(!ai ? "idle" : ai.problem ? "bad" : aiTested ? "ok" : "ready", "AI provider", "Required to assess unknown types and write plans",
+    !ai ? "Checking..." : ai.problem ? ai.problem : `${aiLabel(ai)}, ${aiModelText(ai)}.${aiTested ? " Connection tested." : " Test the connection before a long run."}`,
+    ai && !ai.problem && !aiTested ? "Test connection" : "AI settings", "aibar");
+  const lsw = checkItem(!live ? "idle" : keyVerified ? "ok" : "warn", "Leaseweb", "Optional: only to send real calls",
+    !live ? "No key: Automatic migration runs as a dry run and sends nothing. Add a key when you are ready to create real resources."
+      : keyVerified ? "Key verified. Automatic migration sends real calls." : "A key is set but not verified yet.",
+    live ? "Leaseweb settings" : "Add a key", "keybar");
+  box.replaceChildren(azure, aiItem, lsw);
+}
+
+// A blocked action says why, and links to the settings that fix it.
+function showBlock(id, text, barId) {
+  const p = $(id);
+  p.hidden = !text;
+  if (!text) { p.replaceChildren(); return; }
+  const fix = el("button", { type: "button", class: "link" }, "Open the settings");
+  fix.addEventListener("click", () => openPanel(barId));
+  p.replaceChildren(...withCode(text), " ", fix);
+}
+
+function refreshGates() {
+  const az = azureState;
+  const azBlock = az && !az.signed_in ? az.message : "";
+  const dbtn = $("discover-btn");
+  if (!dbtn.classList.contains("loading")) dbtn.disabled = !!azBlock;
+  showBlock("discover-block", azBlock ? "Discover needs Azure: " + azBlock : "", "azurebar");
+  const rbtn = $("rg-refresh");
+  if (!rbtn.classList.contains("loading")) rbtn.disabled = !!azBlock;
+  const aiBlock = aiState && aiState.problem;
+  const pbtn = $("plan-btn");
+  if (!pbtn.classList.contains("loading")) pbtn.disabled = !!aiBlock;
+  showBlock("plan-block", aiBlock ? "Plans need a working AI provider: " + aiBlock : "", "aibar");
+  showBlock("assess-block", aiBlock ? "The AI provider is not ready, so resource types without a built-in rule cannot be classified and AI dependency links are skipped." : "", "aibar");
 }
 
 // ---- resource group picker: a dropdown of the groups the az login can see (a text box if az cannot list them)
@@ -1221,7 +1454,8 @@ async function loadGroups(keep) {
 }
 
 async function discover() {
-  const trigger = $("discover-form").querySelector("button[type=submit]");
+  const trigger = $("discover-btn");
+  if (trigger.disabled) return;
   if (!(await confirmWipe("discover", $("discover-form"), "Discover", trigger))) return;
   const group = currentGroup();
   if (!group) { setError("Enter or pick a resource group first.", null); return; }
@@ -1230,6 +1464,7 @@ async function discover() {
   const data = await call("/api/discover", { resource_group: group }, $("discover-out"), discover, "POST",
     { title: `Reading ${group} from Azure`, hint: "Lists every resource and its configuration. Azure is only read. A large group can take a minute." });
   setLoading(trigger, false);
+  refreshGates();
   stageWorking("discover", false);
   if (!data) return;
   invalidateAfter("discover");
@@ -1329,7 +1564,8 @@ function startPlanProgress(out) {
 async function plan() {
   const form = new URLSearchParams();
   folderInputs().map((i) => i.value.trim()).filter(Boolean).forEach((v) => form.append("source_dirs", v));
-  const submit = $("plan-form").querySelector("button[type=submit]");
+  const submit = $("plan-btn");
+  if (submit.disabled) return;
   if (!(await confirmWipe("plan", $("plan-form"), "Generate the plan", submit))) return;
   setLoading(submit, true, "Generating...");
   stageWorking("plan", true);
@@ -1338,6 +1574,7 @@ async function plan() {
   const data = await pending;
   stop();
   setLoading(submit, false);
+  refreshGates();
   stageWorking("plan", false);
   if (!data) return;
   invalidateAfter("plan");
@@ -1404,6 +1641,7 @@ async function restore() {
   let s;
   try { s = await (await fetch("/api/state")).json(); } catch (e) { return; }
   live = !!s.api_key_set;
+  keyVerified = s.key_verified ?? null;
   chainIds = s.chain || {};
   createdItems = s.created || [];
   refreshMode();
@@ -1463,26 +1701,29 @@ $("reset-btn").addEventListener("click", resetAll);
 $("assess-btn").addEventListener("click", assess);
 $("migrate-btn").addEventListener("click", migrate);
 $("teardown-btn").addEventListener("click", teardown);
-$("ai-btn").addEventListener("click", () => {
-  const bar = $("aibar");
-  bar.hidden = !bar.hidden;
-  $("ai-btn").setAttribute("aria-expanded", String(!bar.hidden));
-  if (!bar.hidden) $("ai-provider").focus();
-});
+$("ai-btn").addEventListener("click", () => togglePanel("aibar"));
+$("azure-btn").addEventListener("click", () => togglePanel("azurebar"));
+$("az-check").addEventListener("click", () => loadAzure(true));
+$("az-sub-save").addEventListener("click", saveSubscription);
 $("ai-provider").addEventListener("change", () => syncAiForm($("ai-provider").value));
 $("ai-form").addEventListener("submit", saveAi);
 $("ai-test").addEventListener("click", testAi);
 $("ai-key-remove").addEventListener("click", removeAiKey);
-$("key-btn").addEventListener("click", () => {
-  const bar = $("keybar");
-  bar.hidden = !bar.hidden;
-  $("key-btn").setAttribute("aria-expanded", String(!bar.hidden));
-  if (!bar.hidden) $("api-key").focus();
-});
+$("key-btn").addEventListener("click", () => togglePanel("keybar"));
+$("key-test").addEventListener("click", async () => { setLoading($("key-test"), true, "Verifying..."); await verifyKey(); setLoading($("key-test"), false); renderKeyConn(); });
 $("key-form").addEventListener("submit", setKey);
 $("key-remove").addEventListener("click", removeKey);
 $("live-off").addEventListener("click", removeKey);
 $("retry").addEventListener("click", () => lastAction && lastAction());
+// Leaving while calls are in flight would hide their results (and, in live mode, what was created).
+window.addEventListener("beforeunload", (e) => {
+  if (busy || document.querySelector(".stage .loading, .step.working")) { e.preventDefault(); e.returnValue = ""; }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || closeConfirm) return;
+  const open = PANELS.find(([, bar]) => !$(bar).hidden);
+  if (open) { closePanel(open[0], open[1]); $(open[0]).focus(); }
+});
 $("diff-inline").addEventListener("click", () => setDiffView("inline", true));
 $("diff-side").addEventListener("click", () => setDiffView("side", true));
 $("diff-close").addEventListener("click", () => diffDialog().close());
@@ -1510,5 +1751,6 @@ $("next").addEventListener("click", () => {
 addFolder();
 loadAi();
 $("rg-refresh").addEventListener("click", () => loadGroups());
-loadGroups();
+renderChecks();
+loadAzure();
 restore();

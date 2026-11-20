@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Azure to Leaseweb Migration Assistant</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304052f'/%3E%3Cpath d='M7 21 12 11 17 21Z' fill='none' stroke='%23e86826' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='M17 16h9m-3.5-3.5L26 16l-3.5 3.5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap">
@@ -24,36 +25,59 @@
   </div>
   <div class="top-actions">
     <span class="mode" id="mode" role="status"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
-    <button class="btn ghost" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar">AI: Claude Code (CLI)<span class="ai-model">default model</span></button>
-    <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">Leaseweb key</button>
+    <span class="conns" role="group" aria-label="Connections">
+      <button class="btn ghost conn" id="azure-btn" type="button" aria-expanded="false" aria-controls="azurebar"><i class="dot" id="azure-dot"></i><span id="azure-btn-text">Azure: checking...</span></button>
+      <button class="btn ghost conn" id="ai-btn" type="button" aria-expanded="false" aria-controls="aibar"><i class="dot" id="ai-dot"></i><span id="ai-btn-text">AI: Claude Code (CLI)<span class="ai-model">default model</span></span></button>
+      <button class="btn ghost conn" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar"><i class="dot" id="key-dot"></i><span id="key-btn-text">Leaseweb: no key</span></button>
+    </span>
     <button class="btn ghost" id="reset-btn" type="button">Start over</button>
   </div>
 </header>
 
 
+<div class="keybar" id="azurebar" hidden>
+  <h2 class="bar-title">Azure connection <span class="bar-sub">read-only: Azure is never changed</span></h2>
+  <div class="ai-row"><span class="bar-label">Azure CLI</span><span id="az-status" class="bar-status" role="status" aria-live="polite">Checking...</span></div>
+  <div class="ai-row" id="az-sub-row" hidden>
+    <label for="az-sub" class="bar-label">Subscription</label>
+    <select id="az-sub"></select>
+    <button class="btn" type="button" id="az-sub-save">Use this subscription</button>
+  </div>
+  <p class="ai-help" id="az-help"></p>
+  <div class="ai-row">
+    <button class="btn secondary" type="button" id="az-check">Check again</button>
+    <span id="az-result" class="bar-result" role="status" aria-live="polite"></span>
+  </div>
+</div>
+
 <div class="keybar" id="keybar" hidden>
+  <h2 class="bar-title">Leaseweb connection <span class="bar-sub">optional: needed only to send real calls</span></h2>
+  <p class="bar-state" id="key-state" role="status" aria-live="polite"></p>
   <form id="key-form" autocomplete="off">
-    <label for="api-key">Leaseweb API key</label>
+    <label for="api-key" class="bar-label">Leaseweb API key</label>
     <input id="api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key. It is never shown again.">
-    <button class="btn" type="submit">Save key</button>
+    <button class="btn" type="submit" id="key-save">Save and verify</button>
+    <button class="btn secondary" type="button" id="key-test" hidden>Verify again</button>
     <button class="btn secondary" type="button" id="key-remove" hidden>Remove key</button>
   </form>
-  <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Automatic migration sends real calls to Leaseweb instead of a dry run.</p>
+  <p id="key-result" class="bar-result" role="status" aria-live="polite"></p>
+  <p id="key-help">Create a key in the Leaseweb Customer Portal under API keys. It is checked with one read-only call, kept in server memory only, and lost when the server stops. While a key is set, Automatic migration sends real calls to Leaseweb instead of a dry run.</p>
 </div>
 
 <div class="keybar" id="aibar" hidden>
+  <h2 class="bar-title">AI provider <span class="bar-sub">classifies unknown resource types, finds dependencies and writes the plans</span></h2>
   <form id="ai-form" autocomplete="off">
     <div class="ai-row">
-      <label for="ai-provider">AI used for assessments and plans</label>
+      <label for="ai-provider" class="bar-label">Provider</label>
       <select id="ai-provider"></select>
     </div>
     <div class="ai-row" id="ai-model-row">
-      <label for="ai-model">Model</label>
+      <label for="ai-model" class="bar-label">Model</label>
       <select id="ai-model"></select>
       <span class="ai-note" id="ai-model-note"></span>
     </div>
     <div class="ai-row" id="ai-key-row" hidden>
-      <label for="ai-key">Anthropic API key</label>
+      <label for="ai-key" class="bar-label">Anthropic API key</label>
       <input id="ai-key" type="password" autocomplete="new-password" spellcheck="false">
       <button class="btn secondary" type="button" id="ai-key-remove" hidden>Remove key</button>
     </div>
@@ -95,30 +119,38 @@
     </div>
     <section id="stage-discover" class="stage">
       <div class="stage-head">
+        <p class="eyebrow">Step 1 of 4</p>
         <h2>Discover resources</h2>
         <p>Read the resources of an Azure resource group. Azure is only read, never changed.</p>
       </div>
+      <section class="readiness" id="readiness" aria-labelledby="readiness-title">
+        <h3 id="readiness-title" class="readiness-title">Before you start</h3>
+        <div class="checks" id="checks"></div>
+      </section>
       <form id="discover-form" class="row">
         <label for="rg">Resource group</label>
         <select id="rg" name="resource_group" data-default="{{ default_rg }}"><option value="{{ default_rg }}" selected>{{ default_rg }}</option></select>
         <input id="rg-typed" name="resource_group_typed" placeholder="Resource group name" autocomplete="off" spellcheck="false" hidden>
         <button class="btn secondary" type="button" id="rg-refresh" title="Reload the list from Azure">Refresh list</button>
-        <button class="btn" type="submit">Discover resources</button>
+        <button class="btn" type="submit" id="discover-btn">Discover resources</button>
+        <p class="blocker" id="discover-block" hidden></p>
       </form>
       <div id="discover-out"><p class="empty">No resources loaded yet. Pick a resource group and discover it.</p></div>
     </section>
 
     <section id="stage-assess" class="stage" hidden>
       <div class="stage-head">
+        <p class="eyebrow">Step 2 of 4</p>
         <h2>Assess Leaseweb fit</h2>
         <p>How each Azure resource maps to Leaseweb.</p>
       </div>
-      <div class="row"><button class="btn secondary" id="assess-btn">Re-run assessment</button></div>
+      <div class="row"><button class="btn secondary" id="assess-btn">Re-run assessment</button><p class="blocker warn" id="assess-block" hidden></p></div>
       <div id="assess-out"></div>
     </section>
 
     <section id="stage-plan" class="stage" hidden>
       <div class="stage-head">
+        <p class="eyebrow">Step 3 of 4</p>
         <h2>Manual migration</h2>
         <p>Resources with no direct Leaseweb equivalent have to be rebuilt by hand. Here is the proposed Leaseweb setup for each, plus the code changes it needs.</p>
       </div>
@@ -130,14 +162,16 @@
         <div id="folder-list"></div>
         <div class="sources-actions">
           <button type="button" class="btn secondary" id="add-folder">Add folder</button>
-          <button class="btn" type="submit">Generate plan</button>
+          <button class="btn" type="submit" id="plan-btn">Generate plan</button>
         </div>
+        <p class="blocker" id="plan-block" hidden></p>
       </form>
       <div id="plan-out"></div>
     </section>
 
     <section id="stage-migrate" class="stage" hidden>
       <div class="stage-head">
+        <p class="eyebrow">Step 4 of 4</p>
         <h2 id="migrate-title">Automatic migration (dry run)</h2>
         <p id="migrate-desc">The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.</p>
       </div>

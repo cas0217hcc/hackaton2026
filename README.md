@@ -92,6 +92,14 @@ Because it can send live Leaseweb calls, the app refuses changing requests that 
 
 ### First run
 
+The header shows three connections, each with a status dot: **Azure**, **AI** and **Leaseweb**. Click one to see and change its settings. **Discover** also lists them under *Before you start*, says what each one is needed for, and links to the fix when one is not ready. The app will not run a step whose prerequisite is missing:
+
+| Connection | Needed for | Checked how |
+|---|---|---|
+| Azure | Discover (required) | `az account show`: is the CLI installed and signed in, as whom. Pick the subscription Discover reads; your `az` default is not changed. |
+| AI provider | Assess of unknown types and Manual migration (required for plans) | The provider must be installed or have a key. **Test connection** sends one tiny request. |
+| Leaseweb | Live runs only (optional) | On save, the key is checked with one read-only call. A key Leaseweb rejects is removed again, so a wrong key never leaves the app in live mode. |
+
 1. On **Discover**, enter a resource group and click **Discover resources**. For a large group this takes a while, because each resource's configuration is fetched.
 2. Continue to **Assess** and review the routes.
 3. On **Manual migration**, optionally add source folders, then **Generate plan**.

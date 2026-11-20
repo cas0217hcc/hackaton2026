@@ -18,7 +18,8 @@ from starlette.requests import Request
 
 from .assess import assess
 from .dependencies import add_dependencies
-from .azure_discovery import DiscoveryError, list_resource_groups, list_resources
+from .azure_discovery import (DiscoveryError, azure_status as default_azure_status, list_resource_groups, list_resources,
+                              list_subscriptions as default_list_subscriptions)
 from .claude_cli import ClaudeError
 from .claude_cli import MODEL_RE
 from .llm import DEFAULT_API_MODEL, AiSettings, available_providers, list_models as default_list_models, make_ask as default_make_ask
@@ -39,7 +40,8 @@ DEFAULT_STATE_FILE = Path("data/state.json")
 
 
 def _empty_state() -> dict:
-    return {"resource_group": DEFAULT_RG, "source_dirs": [], "resources": [], "assessments": [], "plans": [], "calls": []}
+    return {"resource_group": DEFAULT_RG, "subscription": "", "source_dirs": [], "resources": [], "assessments": [], "plans": [],
+            "calls": []}
 
 
 def _dump(state: dict) -> dict:
@@ -54,6 +56,7 @@ def _load(path: Path | None) -> dict:
     try:
         raw = json.loads(path.read_text())
         state["resource_group"] = raw.get("resource_group", DEFAULT_RG)
+        state["subscription"] = str(raw.get("subscription") or "")
         old = [raw["source_dir"]] if raw.get("source_dir") else []
         state["source_dirs"] = list(raw.get("source_dirs") or old)
         state["resources"] = [Resource(**r) for r in raw.get("resources", [])]
@@ -103,7 +106,8 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                state_file: Path | None = DEFAULT_STATE_FILE, http=None, make_ask: Callable = default_make_ask,
                models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups,
                pick_folder: Callable = default_pick_folder, git_runner: Callable | None = None,
-               wait_timeout: float = 600) -> FastAPI:
+               wait_timeout: float = 600, azure_status_fn: Callable = default_azure_status,
+               subscriptions_fn: Callable = default_list_subscriptions) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     extra_hosts = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
 
@@ -141,6 +145,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         return (ask or make_ask(ai))(prompt)
 
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
+    key_check: dict = {"verified": None, "detail": ""}  # result of the last /api/key/test (True, False, None = unknown)
     ops = load_operations()
     launch_options = load_launch_options()
 
@@ -167,7 +172,8 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "chain": dict(chain), "created": list(created)}
+        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
+                "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/key")
     def api_set_key(api_key: str = Form("")):
@@ -175,27 +181,84 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if not key:
             return error("API key is empty.", 400)
         secrets["api_key"] = key
-        return {"api_key_set": True}
+        key_check.update(verified=None, detail="")
+        return {"api_key_set": True, "key_verified": None}
 
     @app.delete("/api/key")
     def api_clear_key():
         secrets["api_key"] = None
-        return {"api_key_set": False}
+        key_check.update(verified=None, detail="")
+        return {"api_key_set": False, "key_verified": None}
+
+    @app.post("/api/key/test")
+    def api_test_key():
+        """Check the key with one harmless read (list one instance). A key Leaseweb rejects is removed again,
+        so a wrong key can never leave the app in live mode."""
+        key = secrets["api_key"]
+        if not key:
+            return error("No Leaseweb API key is set.", 409)
+        try:
+            resp = client.request("GET", BASE_URL + "/publicCloud/v1/instances", params={"limit": 1},
+                                  headers={"X-LSW-Auth": key, "Accept": "application/json"}, timeout=15)
+            status = resp.status_code
+        except Exception:
+            key_check.update(verified=None, detail="Could not reach the Leaseweb API to check the key. It is kept; check your network.")
+            return {"api_key_set": True, "key_verified": None, "detail": key_check["detail"]}
+        if status in (401, 403):
+            secrets["api_key"] = None
+            key_check.update(verified=None, detail="")
+            return error("Leaseweb rejected this key (HTTP %d). It was not kept, so the app stays in dry run." % status, 400)
+        if 200 <= status < 300:
+            key_check.update(verified=True, detail="Leaseweb accepted the key.")
+        else:
+            key_check.update(verified=None, detail=f"Leaseweb answered HTTP {status}, so the key could not be confirmed. It is kept.")
+        return {"api_key_set": True, "key_verified": key_check["verified"], "detail": key_check["detail"]}
 
     @app.post("/api/reset")
     def api_reset():
+        sub_id = state.get("subscription", "")  # a setting, not a result: it survives Start over
         state.clear()
-        state.update(_empty_state())
+        state.update(_empty_state(), subscription=sub_id)
         chain.clear()
         created.clear()
         if state_file is not None:
             state_file.unlink(missing_ok=True)
         return _dump(state)
 
+    def with_sub(fn: Callable, *args):
+        """Call an az helper for the chosen subscription (helpers that take none, like test fakes, get none)."""
+        return fn(*args, subscription=state["subscription"]) if state["subscription"] else fn(*args)
+
+    @app.get("/api/azure")
+    def api_azure():
+        status = azure_status_fn()
+        return {**status, "selected_subscription": state["subscription"]}
+
+    @app.get("/api/azure/subscriptions")
+    def api_azure_subscriptions():
+        try:
+            return {"subscriptions": subscriptions_fn(), "selected": state["subscription"]}
+        except DiscoveryError as e:
+            return error(str(e))
+
+    @app.post("/api/azure/subscription")
+    def api_azure_set_subscription(subscription_id: str = Form("")):
+        wanted = subscription_id.strip()
+        if wanted:
+            try:
+                known = {x["id"] for x in subscriptions_fn()}
+            except DiscoveryError as e:
+                return error(str(e))
+            if wanted not in known:
+                return error("That subscription is not available to your Azure account.", 400)
+        state["subscription"] = wanted
+        save()
+        return {"selected": wanted}
+
     @app.get("/api/resource-groups")
     def api_resource_groups():
         try:
-            return {"groups": groups_fn(), "default": DEFAULT_RG}
+            return {"groups": with_sub(groups_fn), "default": DEFAULT_RG}
         except DiscoveryError as e:
             return error(str(e))
 
@@ -208,8 +271,11 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     @app.post("/api/discover")
     def api_discover(resource_group: str = Form(DEFAULT_RG)):
+        resource_group = resource_group.strip()
+        if not re.fullmatch(r"[\w.()-]{1,90}", resource_group) or resource_group.endswith("."):
+            return error("Enter a valid resource group name (letters, digits, - _ . ( ), up to 90 characters).", 400)
         try:
-            state["resources"] = discover(resource_group)
+            state["resources"] = with_sub(discover, resource_group)
         except DiscoveryError as e:
             return error(str(e))
         state.update(resource_group=resource_group, assessments=[], plans=[], calls=[])
@@ -234,6 +300,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         if not state["assessments"]:
             return error("Run Assess first.", 409)
         rebuild = [a for a in state["assessments"] if a.route == "rebuild"]
+        problem = ai_problem()
+        if rebuild and problem:
+            return error(problem, 409)
         if not rebuild:
             state["plans"] = []
             save()
@@ -317,10 +386,23 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
             return error("Run Assess first.", 409)
         return {"calls": [asdict(c) for c in current_calls()], "live": bool(secrets["api_key"])}
 
+    def ai_problem() -> str:
+        """Why the selected AI provider cannot answer, or ''. Only the built-in providers are checked:
+        an injected `ask` or `make_ask` (as in tests) brings its own backends."""
+        if ask is not None or make_ask is not default_make_ask:
+            return ""
+        chosen = next((p for p in available_providers(ai) if p["id"] == ai.provider), None)
+        if chosen is None or not chosen["available"]:
+            return f"The AI provider is not ready: {chosen['detail'] if chosen else ai.provider}. Choose a working one in the AI settings."
+        if ai.provider == "anthropic-api" and not ai.api_key and not any(
+                os.environ.get(k) for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")):
+            return "The Anthropic API needs a key. Paste one in the AI settings."
+        return ""
+
     def ai_state() -> dict:
         effective = ai.model or (DEFAULT_API_MODEL if ai.provider == "anthropic-api" else "")
         return {"provider": ai.provider, "model": ai.model, "effective_model": effective, "api_key_set": bool(ai.api_key),
-                "providers": available_providers(ai)}
+                "providers": available_providers(ai), "problem": ai_problem()}
 
     @app.get("/api/ai")
     def api_ai():
