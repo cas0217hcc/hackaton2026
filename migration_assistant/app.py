@@ -1,3 +1,4 @@
+import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
@@ -12,19 +13,57 @@ from .assess import assess
 from .azure_discovery import DiscoveryError, list_resources
 from .claude_cli import ClaudeError, ask_json
 from .dryrun import DryRunExecutor, build_calls
+from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_operations
 from .plan import build_plan, read_source
 
 HERE = Path(__file__).parent
 DEFAULT_RG = "hackaton-2026-rg"
+DEFAULT_STATE_FILE = Path("data/state.json")
 
 
-def create_app(discover: Callable = list_resources, ask: Callable = ask_json) -> FastAPI:
+def _empty_state() -> dict:
+    return {"resource_group": DEFAULT_RG, "source_dir": "", "resources": [], "assessments": [], "plans": [], "calls": []}
+
+
+def _dump(state: dict) -> dict:
+    return {k: ([asdict(x) for x in v] if isinstance(v, list) else v) for k, v in state.items()}
+
+
+def _load(path: Path | None) -> dict:
+    """Restore saved state; a missing or corrupt file means a fresh start."""
+    state = _empty_state()
+    if path is None or not path.exists():
+        return state
+    try:
+        raw = json.loads(path.read_text())
+        state["resource_group"] = raw.get("resource_group", DEFAULT_RG)
+        state["source_dir"] = raw.get("source_dir", "")
+        state["resources"] = [Resource(**r) for r in raw.get("resources", [])]
+        state["assessments"] = [Assessment(**a) for a in raw.get("assessments", [])]
+        state["plans"] = [
+            Plan(**{**p, "code_changes": [CodeChange(**c) for c in p.get("code_changes", [])]})
+            for p in raw.get("plans", [])
+        ]
+        state["calls"] = [DryRunCall(**c) for c in raw.get("calls", [])]
+    except (ValueError, TypeError, KeyError, OSError):
+        return _empty_state()
+    return state
+
+
+def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
+               state_file: Path | None = DEFAULT_STATE_FILE) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
-    state: dict = {"resources": [], "assessments": [], "plans": [], "calls": []}
+    state = _load(state_file)
     ops = load_operations()
+
+    def save() -> None:
+        if state_file is None:
+            return
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps(_dump(state)))
 
     def error(message: str, status: int = 502):
         return JSONResponse({"error": message}, status_code=status)
@@ -33,13 +72,18 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json) ->
     def index(request: Request):
         return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG})
 
+    @app.get("/api/state")
+    def api_state():
+        return _dump(state)
+
     @app.post("/api/discover")
     def api_discover(resource_group: str = Form(DEFAULT_RG)):
         try:
             state["resources"] = discover(resource_group)
         except DiscoveryError as e:
             return error(str(e))
-        state.update(assessments=[], plans=[], calls=[])
+        state.update(resource_group=resource_group, assessments=[], plans=[], calls=[])
+        save()
         return {"resources": [asdict(r) for r in state["resources"]]}
 
     @app.post("/api/assess")
@@ -50,6 +94,8 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json) ->
             state["assessments"] = assess(state["resources"], ask=ask, ops=ops)
         except ClaudeError as e:
             return error(str(e))
+        state.update(plans=[], calls=[])
+        save()
         return {"assessments": [asdict(a) for a in state["assessments"]]}
 
     @app.post("/api/plan")
@@ -59,13 +105,16 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json) ->
         rebuild = [a for a in state["assessments"] if a.route == "rebuild"]
         if not rebuild:
             state["plans"] = []
+            save()
             return {"plans": [], "message": "Nothing to plan: every resource migrates directly."}
+        state["source_dir"] = source_dir
         source = read_source(Path(source_dir) if source_dir.strip() else None)
         by_name = {r.name: r for r in state["resources"]}
         try:
             state["plans"] = [build_plan(a, by_name[a.resource_name], source, ask=ask, ops=ops) for a in rebuild]
         except ClaudeError as e:
             return error(str(e))
+        save()
         return {"plans": [asdict(p) for p in state["plans"]], "message": ""}
 
     @app.post("/api/migrate")
@@ -75,6 +124,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json) ->
         executor = DryRunExecutor()
         calls = build_calls(state["assessments"], ops)
         state["calls"] = calls
+        save()
         return {"calls": [asdict(c) for c in calls], "results": [executor.execute(c) for c in calls]}
 
     @app.get("/export", response_class=PlainTextResponse)

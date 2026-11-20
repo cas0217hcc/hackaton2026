@@ -10,6 +10,7 @@
 <header class="top">
   <h1>Azure to Leaseweb migration</h1>
   <span class="note">Dry-run mode: nothing is sent to Leaseweb</span>
+  <span class="note" id="restored" hidden>Showing saved results from your last session. Re-run any stage to refresh.</span>
 </header>
 
 <nav class="steps" aria-label="Stages">
@@ -35,6 +36,7 @@
   </section>
 
   <section id="stage-assess" class="stage" hidden>
+    <div class="row"><button class="btn secondary" id="assess-btn">Re-run assessment</button></div>
     <div id="assess-out"></div>
   </section>
 
