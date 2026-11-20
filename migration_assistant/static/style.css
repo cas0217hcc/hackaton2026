@@ -116,7 +116,13 @@ td.sub { color: var(--mute); }
 
 /* Plan */
 .plan { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 20px; overflow: hidden; }
-.plan-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #f6f8fa; border-bottom: 1px solid var(--line); }
+.plan-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: #f6f8fa; cursor: pointer; list-style: none; user-select: none; }
+.plan-head::-webkit-details-marker { display: none; }
+.plan[open] > .plan-head { border-bottom: 1px solid var(--line); }
+.plan-head:hover { background: #eff3f6; }
+.chev { margin-left: auto; width: 8px; height: 8px; border: solid var(--mute); border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-2px); transition: transform 150ms ease-out; }
+.plan[open] > .plan-head .chev { transform: rotate(-135deg) translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 .plan-head h3 { margin: 0; font-size: 15px; }
 .plan-body { padding: 18px 20px 6px; }
 .plan p { margin: 0 0 12px; max-width: 74ch; }

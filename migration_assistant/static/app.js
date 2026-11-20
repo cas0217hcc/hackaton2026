@@ -173,8 +173,8 @@ function renderPlan(plans, message) {
     out.replaceChildren(el("p", { class: "empty" }, message));
   } else {
     out.replaceChildren(...plans.map((p) => {
-      const card = el("div", { class: "plan" },
-        el("div", { class: "plan-head" }, icon(resourceTypes[p.resource_name]), el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild")));
+      const card = el("details", { class: "plan", open: "" },
+        el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name]), el("h3", { class: "id" }, p.resource_name), el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
       const box = el("div", { class: "plan-body" }, el("p", { class: "summary" }, p.proposal));
       card.append(box);
       if (p.steps.length) {
