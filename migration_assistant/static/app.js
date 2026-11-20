@@ -240,6 +240,8 @@ function renderAssess(assessments) {
   };
   $("assess-out").replaceChildren(
     el("div", { class: "summary-bar" }, stat("direct"), stat("rebuild"), stat("included")),
+    el("p", { class: "legend" }, el("b", {}, "Direct"), " migrates as it is. ", el("b", {}, "Rebuild"), " has no Leaseweb equivalent and needs a plan. ",
+      el("b", {}, "Included"), " comes with the Leaseweb instance (network interface, disk, public IP), so there is nothing to migrate separately."),
     table(["Resource", "Leaseweb target", "Route", "Why"], assessments.map((a) =>
       el("tr", {}, el("td", {}, resCell(a.resource_name)), el("td", {}, a.target), el("td", {}, pill(a.route)), el("td", { class: "sub" }, a.rationale)))));
   done.assess = true;
@@ -390,7 +392,7 @@ function updateRowStatus(row) {
   if (row.ran) return;
   const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, chainIds[p] ? `${p} = ${chainIds[p]} (from ${op})` : `${p} comes from ${op}`));
   row.status.replaceChildren(
-    missing ? el("span", { class: "pill rebuild" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`) : el("span", { class: "pill included" }, "Ready"),
+    missing ? el("span", { class: "pill needs" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`) : el("span", { class: "pill ready" }, "Ready"),
     ...notes);
 }
 
@@ -430,8 +432,8 @@ function showResult(row, r) {
   row.ran = true;
   let pillEl, note = "";
   if (r.error) { pillEl = el("span", { class: "pill bad" }, "Error"); note = r.error; }
-  else if (r.skipped) { pillEl = el("span", { class: "pill rebuild" }, "Skipped"); note = r.reason; }
-  else if (r.dry_run) { pillEl = el("span", { class: "pill included" }, "Dry run"); note = "Not sent"; }
+  else if (r.skipped) { pillEl = el("span", { class: "pill neutral" }, "Skipped"); note = r.reason; }
+  else if (r.dry_run) { pillEl = el("span", { class: "pill neutral" }, "Dry run"); note = "Not sent"; }
   else {
     pillEl = el("span", { class: "pill " + (r.status < 400 ? "direct" : "bad") }, `Sent ${r.status}`);
     note = typeof r.response === "string" ? r.response : JSON.stringify(r.response).slice(0, 240);

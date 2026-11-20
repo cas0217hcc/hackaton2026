@@ -9,13 +9,15 @@
 <body>
 <header class="top">
   <div class="brand">
-    <img class="lsw-logo" id="lsw-logo" alt="Leaseweb" hidden>
-    <svg class="logo" id="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
-      <rect x="1" y="1" width="30" height="30" rx="7" fill="#12303a"/>
-      <path d="M7 21 L12 11 L17 21 Z" fill="none" stroke="#7fd1dc" stroke-width="2" stroke-linejoin="round"/>
-      <path d="M17 16 H26 M22.5 12.5 L26 16 L22.5 19.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <h1>Azure to Leaseweb <span>migration assistant</span></h1>
+    <span class="brand-tab">
+      <img class="lsw-logo" id="lsw-logo" alt="Leaseweb" hidden>
+      <svg class="logo" id="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="7" fill="#04052f"/>
+        <path d="M7 21 L12 11 L17 21 Z" fill="none" stroke="#e86826" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M17 16 H26 M22.5 12.5 L26 16 L22.5 19.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <h1>Azure migration assistant</h1>
   </div>
   <div class="top-actions">
     <span class="mode" id="mode"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
@@ -45,6 +47,7 @@
 
 <main>
   <div id="error" class="error" role="alert" hidden>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/></svg>
     <span id="error-text"></span>
     <button class="btn secondary" id="retry">Retry</button>
   </div>
@@ -66,7 +69,7 @@
     <section id="stage-assess" class="stage" hidden>
       <div class="stage-head">
         <h2>Assess Leaseweb fit</h2>
-        <p>Each resource either migrates directly, has to be rebuilt, or comes with another resource.</p>
+        <p>How each Azure resource maps to Leaseweb.</p>
       </div>
       <div class="row"><button class="btn secondary" id="assess-btn">Re-run assessment</button></div>
       <div id="assess-out"></div>
