@@ -264,15 +264,20 @@ function renderPlan(plans, message) {
         el("summary", { class: "plan-head" }, icon(resourceTypes[p.resource_name], resourceKinds[p.resource_name]), el("h3", { class: "id" }, p.resource_name), failedPlan(p) ? el("span", { class: "pill bad" }, "Failed") : el("span", { class: "pill rebuild" }, "Rebuild"), el("span", { class: "chev", "aria-hidden": "true" })));
       const box = el("div", { class: "plan-body" }, failedPlan(p) ? el("p", { class: "note" }, "This plan could not be generated. Click Generate plan to try again.") : el("p", { class: "summary" }, p.proposal));
       card.append(box);
+      // Steps on the left; operations and code changes on the right (stacked on narrow screens).
+      const main = el("div", { class: "plan-col" });
+      const side = el("div", { class: "plan-col" });
       if (p.steps.length) {
-        box.append(el("h4", {}, "Migration steps"), el("ol", { class: "steps-list" }, ...p.steps.map((t) => el("li", {}, t))));
+        main.append(el("h4", {}, "Migration steps"), el("ol", { class: "steps-list" }, ...p.steps.map((t) => el("li", {}, t))));
       }
       if (p.lw_operations.length) {
-        box.append(el("h4", {}, "Leaseweb operations"), el("div", { class: "chips" }, ...p.lw_operations.map((o) => el("span", { class: "chip" }, o))));
+        side.append(el("h4", {}, "Leaseweb operations"), el("div", { class: "chips" }, ...p.lw_operations.map((o) => el("span", { class: "chip" }, o))));
       }
       p.code_changes.forEach((c) => {
-        box.append(el("details", { class: "change", open: "" }, el("summary", {}, el("span", { class: "id" }, c.file), " - " + c.summary), diffBlock(c.diff)));
+        side.append(el("details", { class: "change", open: "" }, el("summary", {}, el("span", { class: "id" }, c.file), " - " + c.summary), diffBlock(c.diff)));
       });
+      const cols = [main, side].filter((c) => c.childElementCount);
+      if (cols.length) box.append(el("div", { class: "plan-grid" + (cols.length === 1 ? " single" : "") }, ...cols));
       p.warnings.forEach((w) => box.append(el("p", { class: "warning" }, w)));
       return card;
     }));

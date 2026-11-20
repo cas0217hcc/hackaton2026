@@ -179,12 +179,17 @@ tr.detail > td { padding: 0; background: #f9fbfc; }
 @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 .plan-head h3 { margin: 0; font-size: 15px; }
 .plan-body { padding: 18px 20px 6px; }
-.plan p { margin: 0 0 12px; max-width: 74ch; }
+.plan p { margin: 0 0 12px; max-width: 110ch; }
 .summary { font-size: 15px; line-height: 1.6; }
 .plan h4 { margin: 20px 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--mute); }
-.steps-list { margin: 0 0 4px; padding: 0; list-style: none; counter-reset: s; max-width: 78ch; }
+.steps-list { margin: 0 0 4px; padding: 0; list-style: none; counter-reset: s; }
 .steps-list li { counter-increment: s; position: relative; margin: 0 0 8px; padding-left: 36px; min-height: 24px; }
 .steps-list li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--acc-tint); color: var(--acc-dark); font-size: 12px; font-weight: 650; }
+.plan-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 8px 36px; align-items: start; }
+.plan-grid.single { grid-template-columns: minmax(0, 1fr); }
+.plan-col { min-width: 0; }
+.plan-col > h4:first-child { margin-top: 12px; }
+@media (max-width: 900px) { .plan-grid { grid-template-columns: minmax(0, 1fr); } }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--canvas); font: 12px ui-monospace, Menlo, Consolas, monospace; }
 .change { margin: 20px 0 14px; }
