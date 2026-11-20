@@ -40,8 +40,15 @@ function setError(msg, retry) {
 async function call(path, form, outEl, action) {
   setError("");
   outEl.replaceChildren(el("div", { class: "skeleton" }), el("div", { class: "skeleton" }), el("div", { class: "skeleton" }));
-  const res = await fetch(path, { method: "POST", body: form ? new URLSearchParams(form) : undefined });
-  const data = await res.json();
+  let res, data;
+  try {
+    res = await fetch(path, { method: "POST", body: form ? new URLSearchParams(form) : undefined });
+    data = await res.json();
+  } catch (e) {
+    outEl.replaceChildren();
+    setError("Request failed. Check the server and retry.", action);
+    return null;
+  }
   if (!res.ok) {
     outEl.replaceChildren();
     setError(data.error || "Request failed", action);

@@ -25,7 +25,9 @@ def ask_json(prompt: str, timeout: int = 180, runner: Callable = subprocess.run)
         text = fence.group(1).strip()
     for candidate in (text, text[text.find("{"):text.rfind("}") + 1]):
         try:
-            return json.loads(candidate)
+            data = json.loads(candidate)
         except json.JSONDecodeError:
             continue
+        if isinstance(data, dict):
+            return data
     raise ClaudeError("claude did not return valid JSON")

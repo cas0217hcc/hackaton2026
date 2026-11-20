@@ -40,3 +40,13 @@ def test_code_changes_parsed():
     assert plan.code_changes[0].file == "secrets.py"
     assert plan.code_changes[0].diff == "-a\n+b"
     assert not any("no code" in w for w in plan.warnings)
+
+
+import pytest
+
+from migration_assistant.claude_cli import ClaudeError
+
+
+def test_malformed_code_change_raises_claude_error():
+    with pytest.raises(ClaudeError):
+        build_plan(KV, KV_RES, {"a.py": "x"}, ask=answer(changes=[{"file": "a.py"}]))

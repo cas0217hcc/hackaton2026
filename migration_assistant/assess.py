@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .claude_cli import ask_json
+from .claude_cli import ClaudeError, ask_json
+from .leaseweb_ops import load_operations
 from .models import Assessment, Resource
 
 
@@ -33,7 +34,25 @@ FOLDED = {
 }
 
 
+def _rule_from_answer(ans: dict, ops: dict) -> Rule:
+    """Validate Claude's verdict for an unknown type; never trust its shape or operation names."""
+    try:
+        route = str(ans["route"]).strip().lower()
+        target, rationale = ans["target"], ans["rationale"]
+    except KeyError as e:
+        raise ClaudeError(f"claude answer missing field {e}") from None
+    if route not in ("direct", "rebuild"):
+        raise ClaudeError(f"claude returned invalid route '{ans['route']}'")
+    claimed = ans.get("lw_operations", [])
+    valid = [o for o in claimed if o in ops]
+    dropped = [o for o in claimed if o not in ops]
+    if dropped:
+        rationale += f" (dropped unknown Leaseweb operations: {', '.join(dropped)})"
+    return Rule(route, target, rationale, valid)
+
+
 def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None = None) -> list[Assessment]:
+    ops = ops if ops is not None else load_operations()
     results: list[Assessment] = []
     cache: dict[str, Rule] = {}
     for r in resources:
@@ -46,6 +65,6 @@ def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None
                 "(Public Cloud, Object Storage, private networks)? Reply JSON: "
                 '{"route": "direct"|"rebuild", "target": str, "rationale": str, "lw_operations": [str]}'
             )
-            rule = cache[r.type] = Rule(ans["route"], ans["target"], ans["rationale"], ans.get("lw_operations", []))
+            rule = cache[r.type] = _rule_from_answer(ans, ops)
         results.append(Assessment(r.name, rule.route, rule.target, rule.rationale, list(rule.lw_operations)))
     return results

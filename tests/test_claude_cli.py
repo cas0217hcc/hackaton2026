@@ -39,3 +39,8 @@ def test_nonzero_exit_raises():
 def test_json_surrounded_by_prose():
     out = 'Here is the plan:\n{"a": {"b": 2}}\nHope that helps.'
     assert ask_json("p", runner=fake(out)) == {"a": {"b": 2}}
+
+
+def test_non_object_json_raises():
+    with pytest.raises(ClaudeError):
+        ask_json("p", runner=fake("[1, 2]"))

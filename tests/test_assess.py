@@ -47,3 +47,32 @@ def test_unknown_type_uses_claude():
         return {"route": "rebuild", "target": "Self-hosted bar", "rationale": "no equivalent", "lw_operations": []}
     a = assess([res("b", "Microsoft.Foo/bars")], ask=ask)[0]
     assert a.route == "rebuild" and a.target == "Self-hosted bar"
+
+
+import pytest
+
+from migration_assistant.claude_cli import ClaudeError
+
+
+def test_unknown_claude_operation_dropped():
+    def ask(prompt):
+        return {"route": "direct", "target": "T", "rationale": "r", "lw_operations": ["launchInstance", "madeUpOp"]}
+    a = assess([res("b", "Microsoft.Foo/bars")], ask=ask)[0]
+    assert a.lw_operations == ["launchInstance"]
+    assert "madeUpOp" in a.rationale
+
+
+def test_malformed_claude_answer_raises_claude_error():
+    with pytest.raises(ClaudeError):
+        assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: {"route": "direct"})
+
+
+def test_invalid_route_raises_claude_error():
+    bad = {"route": "maybe", "target": "T", "rationale": "r"}
+    with pytest.raises(ClaudeError):
+        assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: bad)
+
+
+def test_route_is_normalised():
+    ok = {"route": "Direct", "target": "T", "rationale": "r"}
+    assert assess([res("b", "Microsoft.Foo/bars")], ask=lambda p: ok)[0].route == "direct"

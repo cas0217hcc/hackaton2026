@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Callable
 
-from .claude_cli import ask_json
+from .claude_cli import ClaudeError, ask_json
 from .leaseweb_ops import load_operations
 from .models import Assessment, CodeChange, Plan, Resource
 
@@ -46,7 +46,10 @@ def build_plan(
             valid.append(op)
         else:
             warnings.append(f"Dropped unknown Leaseweb operation '{op}'")
-    changes = [CodeChange(c["file"], c["summary"], c["diff"]) for c in ans.get("code_changes", [])]
+    try:
+        changes = [CodeChange(c["file"], c["summary"], c["diff"]) for c in ans.get("code_changes", [])]
+    except (KeyError, TypeError):
+        raise ClaudeError("claude returned a malformed code change") from None
     if not source:
         warnings.append("no code to analyse")
     return Plan(resource.name, ans.get("proposal", ""), valid, changes, warnings)
