@@ -260,8 +260,46 @@ button.stat:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (max-width: 900px) { .plan-grid { grid-template-columns: minmax(0, 1fr); } }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--canvas); font: 12px ui-monospace, Menlo, Consolas, monospace; }
-.change { margin: 20px 0 14px; }
-.change summary { cursor: pointer; font-weight: 600; margin-bottom: 8px; }
+.change { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.change-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.change-file { overflow-wrap: anywhere; }
+.change-sum { color: var(--mute); font-size: 13px; }
+.change-stats { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.plus { color: var(--ok); } .minus { color: var(--bad); }
+.change .btn { flex: none; padding: 5px 12px; }
+
+/* Diff viewer */
+dialog#diff-dialog { padding: 0; border: 0; border-radius: 12px; width: min(1280px, 96vw); max-width: 96vw; max-height: 90vh; background: var(--paper); color: var(--ink); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); overflow: hidden; }
+dialog#diff-dialog[open] { display: flex; flex-direction: column; }
+dialog#diff-dialog::backdrop { background: rgba(4, 5, 47, 0.55); }
+.diff-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--tint); }
+.diff-titles { min-width: 0; flex: 1 1 320px; }
+.diff-titles h2 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.diff-titles p { margin: 4px 0 0; color: var(--mute); font-size: 13px; }
+.diff-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.diff-stats { font-weight: 600; font-variant-numeric: tabular-nums; }
+.seg { display: inline-flex; border: 1px solid var(--acc); border-radius: 6px; overflow: hidden; }
+.seg button { padding: 6px 14px; border: 0; background: var(--paper); color: var(--acc-dark); font: inherit; font-weight: 600; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--acc); }
+.seg button[aria-pressed="true"] { background: var(--acc); color: #fff; }
+.seg button:disabled { opacity: 0.5; cursor: not-allowed; }
+.diff-body { overflow: auto; background: var(--night); color: #dfe2f5; padding: 12px 0 16px; }
+.diff-meta { padding: 0 20px 8px; color: #9aa0d4; font-size: 12.5px; }
+table.diff { width: 100%; border-collapse: collapse; margin-bottom: 12px; font: 13px/1.55 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; table-layout: fixed; }
+table.diff td { padding: 0 10px; border: 0; vertical-align: top; }
+table.diff tr:hover td { background: transparent; }
+table.diff col.ln { width: 52px; }
+table.diff td.ln { width: 52px; color: #7f86c4; text-align: right; user-select: none; font-variant-numeric: tabular-nums; }
+table.diff td.code-cell { white-space: pre-wrap; overflow-wrap: anywhere; }
+table.diff tr.hunk td { padding: 4px 20px; color: #9aa0d4; background: rgba(255, 255, 255, 0.06); }
+table.diff.inline tr.add td, table.diff.side td.add { background: rgba(143, 224, 164, 0.14); }
+table.diff.inline tr.add td.code-cell, table.diff.side td.code-cell.add { color: #b5f0c4; }
+table.diff.inline tr.del td, table.diff.side td.del { background: rgba(255, 157, 157, 0.14); }
+table.diff.inline tr.del td.code-cell, table.diff.side td.code-cell.del { color: #ffc2c2; }
+table.diff.side td.empty { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px); }
+table.diff.side td.code-cell:nth-child(2) { border-right: 1px solid rgba(255, 255, 255, 0.14); }
+.diff-body :focus-visible { outline-color: #fff; }
+@media (max-width: 720px) { .change { flex-direction: column; align-items: stretch; } dialog#diff-dialog { width: 100vw; max-width: 100vw; max-height: 100vh; border-radius: 0; } }
 .warning { color: var(--warn); }
 pre { margin: 6px 0 12px; padding: 12px 14px; background: var(--night); color: #dfe2f5; border-radius: 8px; overflow: auto; font: 13px/1.55 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
 pre .add { color: #8fe0a4; } pre .del { color: #ff9d9d; }

@@ -207,14 +207,67 @@ function typeName(type) {
 const LABELS = { direct: "Direct", rebuild: "Rebuild", included: "Included" };
 const pill = (route) => el("span", { class: "pill " + route }, LABELS[route] || route);
 
-function diffBlock(text) {
-  const pre = el("pre");
-  text.split("\n").forEach((line) => {
-    const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "";
-    pre.append(el("span", cls ? { class: cls } : {}, line + "\n"));
-  });
-  return pre;
+// ---- diff viewer: a modal with an inline and a side by side layout
+const diffDialog = () => $("diff-dialog");
+let diffCurrent = null;
+
+function savedDiffView() {
+  try { return localStorage.getItem("diffView") === "side" ? "side" : "inline"; } catch (e) { return "inline"; }
 }
+
+const narrow = () => window.matchMedia("(max-width: 720px)").matches;
+
+function diffCell(line, kind, cls) {
+  return [el("td", { class: "ln " + (cls || "") }, line && line[kind] !== null && line[kind] !== undefined ? String(line[kind]) : ""),
+    el("td", { class: "code-cell " + (cls || "") }, line ? line.text : "")];
+}
+
+function renderDiffBody(view) {
+  const parsed = DiffLib.parseDiff(diffCurrent.diff);
+  const box = $("diff-body");
+  if (!parsed.hunks.length) { box.replaceChildren(el("p", { class: "empty" }, "This change has no diff to show.")); return; }
+  const parts = [];
+  if (parsed.meta.length) parts.push(el("div", { class: "diff-meta code" }, ...parsed.meta.map((m) => el("div", {}, m))));
+  parsed.hunks.forEach((h) => {
+    const rows = [];
+    if (h.header) rows.push(el("tr", { class: "hunk" }, el("td", { colspan: view === "side" ? "4" : "3" }, h.header)));
+    if (view === "side") {
+      DiffLib.sideBySide(h).forEach((r) => rows.push(el("tr", {},
+        ...diffCell(r.left, "oldNo", r.left ? (r.left.type === "del" ? "del" : "") : "empty"),
+        ...diffCell(r.right, "newNo", r.right ? (r.right.type === "add" ? "add" : "") : "empty"))));
+    } else {
+      h.lines.forEach((l) => rows.push(el("tr", { class: l.type },
+        el("td", { class: "ln" }, l.oldNo === null ? "" : String(l.oldNo)), el("td", { class: "ln" }, l.newNo === null ? "" : String(l.newNo)),
+        el("td", { class: "code-cell" }, (l.type === "add" ? "+" : l.type === "del" ? "-" : " ") + l.text))));
+    }
+    // Explicit column widths: a fixed table layout would take them from the full-width "@@" row.
+    const cols = view === "side" ? ["ln", "", "ln", ""] : ["ln", "ln", ""];
+    parts.push(el("table", { class: "diff " + view }, el("colgroup", {}, ...cols.map((c) => el("col", c ? { class: "ln" } : {}))), el("tbody", {}, ...rows)));
+  });
+  box.replaceChildren(...parts);
+}
+
+function setDiffView(view, remember) {
+  if (view === "side" && narrow()) view = "inline";  // two columns do not fit a phone
+  $("diff-inline").setAttribute("aria-pressed", String(view === "inline"));
+  $("diff-side").setAttribute("aria-pressed", String(view === "side"));
+  $("diff-side").disabled = narrow();
+  $("diff-side").title = narrow() ? "Needs a wider screen" : "";
+  if (remember) { try { localStorage.setItem("diffView", view); } catch (e) { /* the choice just is not remembered */ } }
+  renderDiffBody(view);
+}
+
+function openDiff(change, trigger) {
+  diffCurrent = change;
+  const st = DiffLib.diffStats(change.diff);
+  $("diff-title").textContent = change.file;
+  $("diff-summary").textContent = change.summary;
+  $("diff-stats").replaceChildren(el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed));
+  setDiffView(savedDiffView(), false);
+  diffDialog().showModal();  // focus moves into the dialog and Esc closes it
+  $("diff-body").scrollTop = 0;
+}
+
 
 // Turn nested configuration into [dotted.key, text] pairs, skipping empty values.
 function flatten(value, prefix = "", out = [], depth = 0) {
@@ -355,8 +408,15 @@ function renderPlan(plans, message) {
       if (p.lw_operations.length) {
         side.append(el("h4", {}, "Leaseweb operations"), el("div", { class: "chips" }, ...p.lw_operations.map((o) => el("span", { class: "chip" }, o))));
       }
+      if (p.code_changes.length) side.append(el("h4", {}, "Code changes"));
       p.code_changes.forEach((c) => {
-        side.append(el("details", { class: "change", open: "" }, el("summary", {}, el("span", { class: "id" }, c.file), " - " + c.summary), diffBlock(c.diff)));
+        const st = DiffLib.diffStats(c.diff);
+        const view = el("button", { type: "button", class: "btn secondary", "aria-label": `View the diff of ${c.file}` }, "View diff");
+        view.addEventListener("click", () => openDiff(c, view));
+        side.append(el("div", { class: "change" },
+          el("div", { class: "change-main" }, el("span", { class: "id change-file" }, c.file), el("span", { class: "change-sum" }, c.summary),
+            el("span", { class: "change-stats" }, el("span", { class: "plus" }, "+" + st.added), " ", el("span", { class: "minus" }, "-" + st.removed))),
+          view));
       });
       const cols = [main, side].filter((c) => c.childElementCount);
       if (cols.length) box.append(el("div", { class: "plan-grid" + (cols.length === 1 ? " single" : "") }, ...cols));
@@ -1002,6 +1062,10 @@ $("key-form").addEventListener("submit", setKey);
 $("key-remove").addEventListener("click", removeKey);
 $("live-off").addEventListener("click", removeKey);
 $("retry").addEventListener("click", () => lastAction && lastAction());
+$("diff-inline").addEventListener("click", () => setDiffView("inline", true));
+$("diff-side").addEventListener("click", () => setDiffView("side", true));
+$("diff-close").addEventListener("click", () => diffDialog().close());
+diffDialog().addEventListener("click", (e) => { if (e.target === diffDialog()) diffDialog().close(); });  // click on the backdrop
 $("restored-dismiss").addEventListener("click", () => { $("restored").hidden = true; });
 $("next").addEventListener("click", () => {
   const to = $("next").dataset.to;

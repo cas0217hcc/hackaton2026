@@ -144,6 +144,24 @@
     </footer>
   </div>
 </main>
+<dialog id="diff-dialog" aria-labelledby="diff-title">
+  <div class="diff-head">
+    <div class="diff-titles">
+      <h2 id="diff-title" class="id"></h2>
+      <p id="diff-summary"></p>
+    </div>
+    <div class="diff-tools">
+      <span class="diff-stats" id="diff-stats"></span>
+      <div class="seg" role="group" aria-label="Diff layout">
+        <button type="button" id="diff-inline" aria-pressed="true">Inline</button>
+        <button type="button" id="diff-side" aria-pressed="false">Side by side</button>
+      </div>
+      <button type="button" class="btn secondary" id="diff-close">Close</button>
+    </div>
+  </div>
+  <div class="diff-body" id="diff-body" tabindex="0"></div>
+</dialog>
+<script src="/static/diff.js?v={{ v }}"></script>
 <script src="/static/app.js?v={{ v }}"></script>
 </body>
 </html>
