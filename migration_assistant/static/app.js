@@ -298,5 +298,18 @@ $("next").addEventListener("click", () => {
   const to = $("next").dataset.to;
   if (to === "assess" && !done.assess) { show("assess"); assess(); } else show(to);
 });
+// Use static/leaseweb-logo.svg (or .png) when present; otherwise keep the built-in mark.
+(function loadLogo() {
+  const img = $("lsw-logo");
+  const candidates = ["/static/leaseweb-logo.svg", "/static/leaseweb-logo.png"];
+  const tryNext = () => {
+    const src = candidates.shift();
+    if (!src) return;
+    img.onload = () => { img.hidden = false; $("brand-mark").setAttribute("hidden", ""); };
+    img.onerror = tryNext;
+    img.src = src;
+  };
+  tryNext();
+})();
 addFolder();
 restore();
