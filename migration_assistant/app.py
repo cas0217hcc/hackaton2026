@@ -12,7 +12,7 @@ from starlette.requests import Request
 from .assess import assess
 from .azure_discovery import DiscoveryError, list_resources
 from .claude_cli import ClaudeError, ask_json
-from .dryrun import DryRunExecutor, build_calls
+from .dryrun import DryRunExecutor, LeasewebExecutor, annotate_chain, build_calls, path_matches, run_calls
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import load_operations
 from .plan import build_plan, read_sources
@@ -54,11 +54,12 @@ def _load(path: Path | None) -> dict:
 
 
 def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
-               state_file: Path | None = DEFAULT_STATE_FILE) -> FastAPI:
+               state_file: Path | None = DEFAULT_STATE_FILE, http=None) -> FastAPI:
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     state = _load(state_file)
+    secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     ops = load_operations()
 
     def save() -> None:
@@ -78,7 +79,20 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
 
     @app.get("/api/state")
     def api_state():
-        return _dump(state)
+        return {**_dump(state), "api_key_set": bool(secrets["api_key"])}
+
+    @app.post("/api/key")
+    def api_set_key(api_key: str = Form("")):
+        key = api_key.strip()
+        if not key:
+            return error("API key is empty.", 400)
+        secrets["api_key"] = key
+        return {"api_key_set": True}
+
+    @app.delete("/api/key")
+    def api_clear_key():
+        secrets["api_key"] = None
+        return {"api_key_set": False}
 
     @app.post("/api/reset")
     def api_reset():
@@ -135,15 +149,37 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
         save()
         return {"plans": [asdict(p) for p in state["plans"]], "message": ""}
 
-    @app.post("/api/migrate")
-    def api_migrate():
+    def executor():
+        key = secrets["api_key"]
+        return LeasewebExecutor(key, http) if key else DryRunExecutor()
+
+    @app.get("/api/migrate/calls")
+    def api_migrate_calls():
         if not state["assessments"]:
             return error("Run Assess first.", 409)
-        executor = DryRunExecutor()
-        calls = build_calls(state["assessments"], ops)
-        state["calls"] = calls
+        return {"calls": [asdict(c) for c in build_calls(state["assessments"], ops)], "live": bool(secrets["api_key"])}
+
+    @app.post("/api/migrate")
+    def api_migrate(calls: str = Form("")):
+        if not state["assessments"]:
+            return error("Run Assess first.", 409)
+        if calls:
+            try:
+                prepared = [DryRunCall(c["method"], c["path"], c["operation_id"], dict(c.get("body") or {}))
+                            for c in json.loads(calls)]
+            except (ValueError, TypeError, KeyError):
+                return error("Invalid calls.", 400)
+            for c in prepared:  # only spec operations may be sent, with the spec's method and path shape
+                spec = ops.get(c.operation_id)
+                if not spec or spec[0] != c.method or not path_matches(spec[1], c.path):
+                    return error(f"Call {c.operation_id} does not match the Leaseweb specs.", 400)
+        else:
+            prepared = build_calls(state["assessments"], ops)
+        annotate_chain(prepared)
+        state["calls"] = prepared
         save()
-        return {"calls": [asdict(c) for c in calls], "results": [executor.execute(c) for c in calls]}
+        results = run_calls(prepared, executor())
+        return {"live": bool(secrets["api_key"]), "calls": [asdict(c) for c in prepared], "results": results}
 
     @app.get("/export", response_class=PlainTextResponse)
     def export():

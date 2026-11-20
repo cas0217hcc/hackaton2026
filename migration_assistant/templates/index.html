@@ -18,10 +18,21 @@
     <h1>Azure to Leaseweb <span>migration assistant</span></h1>
   </div>
   <div class="top-actions">
-    <span class="mode"><i></i>Dry run: nothing is sent to Leaseweb</span>
+    <span class="mode" id="mode"><i></i><span id="mode-text">Dry run: nothing is sent to Leaseweb</span></span>
+    <button class="btn ghost" id="key-btn" type="button" aria-expanded="false" aria-controls="keybar">API key</button>
     <button class="btn ghost" id="reset-btn" type="button">Start over</button>
   </div>
 </header>
+
+<div class="keybar" id="keybar" hidden>
+  <form id="key-form" autocomplete="off">
+    <label for="api-key">Leaseweb API key</label>
+    <input id="api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key. It is never shown again.">
+    <button class="btn" type="submit">Save key</button>
+    <button class="btn secondary" type="button" id="key-remove" hidden>Remove key</button>
+  </form>
+  <p id="key-help">The key is kept in server memory only and is lost when the server stops. While a key is set, Migrate sends real calls to Leaseweb instead of a dry run.</p>
+</div>
 
 <div class="restored" id="restored" hidden>Showing saved results from your last session. Re-run any stage to refresh them.</div>
 
@@ -82,8 +93,8 @@
 
     <section id="stage-migrate" class="stage" hidden>
       <div class="stage-head">
-        <h2>Dry-run migration</h2>
-        <p>The Leaseweb API calls that would migrate the direct resources. Nothing is sent.</p>
+        <h2 id="migrate-title">Dry-run migration</h2>
+        <p id="migrate-desc">The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.</p>
       </div>
       <div class="row"><button class="btn" id="migrate-btn">Run dry-run migration</button></div>
       <div id="migrate-out"></div>

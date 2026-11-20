@@ -30,6 +30,21 @@ h1 span { font-weight: 400; color: #b6c9d1; }
 .btn.ghost { background: transparent; border-color: #3a5767; color: #dbe8ed; padding: 5px 14px; }
 .btn.ghost:hover { background: #1b3a49; border-color: #5b8294; }
 .btn.ghost.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
+.keybar { padding: 14px 32px; background: #fff7e8; border-bottom: 1px solid #f0d9aa; }
+.keybar form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.keybar input { max-width: 460px; }
+.keybar p { margin: 8px 0 0; color: #5f4a1a; font-size: 13px; max-width: 80ch; }
+.mode.live { border-color: #b4572a; color: #ffd9c4; background: #3a1f12; }
+.mode.live i { background: #ff8a4c; }
+.btn.danger { background: #b4401a; border-color: #b4401a; }
+.btn.danger:hover { background: #983513; border-color: #983513; }
+.btn.confirm, .btn.danger.confirm { background: var(--bad); border-color: var(--bad); }
+.path-edit { width: 100%; min-width: 340px; padding: 5px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); }
+.body-edit { width: 100%; min-width: 240px; padding: 6px 8px; border: 1px solid #c4ccd6; border-radius: 6px; background: var(--paper); color: var(--ink); font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+td.seq { width: 52px; color: var(--mute); font-variant-numeric: tabular-nums; }
+td.status { min-width: 130px; }
+.status-note { margin-top: 4px; color: var(--mute); font-size: 12px; overflow-wrap: anywhere; max-width: 260px; }
+tr.needs td { background: #fffaf0; }
 .mode { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border: 1px solid #2a4756; border-radius: 999px; color: #cfe0e6; font-size: 12.5px; }
 .mode i { width: 8px; height: 8px; border-radius: 50%; background: #62d08a; }
 .restored { padding: 8px 32px; background: var(--acc-tint); color: var(--acc-dark); border-bottom: 1px solid #c9e0e4; font-size: 13px; }
@@ -151,4 +166,5 @@ pre .add { color: #8fe0a4; } pre .del { color: #ff9d9d; }
   .stage { padding: 18px 16px 4px; }
   .actions { padding: 14px 16px; }
   .restored { padding: 8px 16px; }
+  .keybar { padding: 12px 16px; }
 }

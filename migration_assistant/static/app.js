@@ -61,6 +61,7 @@ function show(stage) {
   next.textContent = "Continue to " + STAGES[i + 1];
   next.dataset.to = STAGES[i + 1] || "";
   $("export").hidden = !(stage === "plan" || stage === "migrate");
+  if (stage === "migrate" && !$("migrate-out").childElementCount) prepareMigrate();
 }
 
 function setLocked(stage, locked) {
@@ -71,6 +72,7 @@ function setLocked(stage, locked) {
 function invalidateAfter(stage) {
   STAGES.slice(STAGES.indexOf(stage) + 1).forEach((s) => {
     done[s] = false;
+    if (s === "migrate") migrateRows = [];
     $(s + "-out").replaceChildren();
     setLocked(s, true);
   });
@@ -82,12 +84,12 @@ function setError(msg, retry) {
   lastAction = retry || null;
 }
 
-async function call(path, form, outEl, action) {
+async function call(path, form, outEl, action, method = "POST") {
   setError("");
   outEl.replaceChildren(el("div", { class: "skeleton" }), el("div", { class: "skeleton" }), el("div", { class: "skeleton" }));
   let res, data;
   try {
-    res = await fetch(path, { method: "POST", body: form ? (form instanceof URLSearchParams ? form : new URLSearchParams(form)) : undefined });
+    res = await fetch(path, { method, body: form ? (form instanceof URLSearchParams ? form : new URLSearchParams(form)) : undefined });
     data = await res.json();
   } catch (e) {
     outEl.replaceChildren();
@@ -194,20 +196,151 @@ function renderPlan(plans, message) {
   setLocked("migrate", false);
 }
 
+let live = false;
+let migrateRows = [];
+
+// {params} that an earlier call's response will fill in are not "missing".
+function needsValues(path, body, chained) {
+  const open = (path.match(/\{[^}/]+\}/g) || []).filter((m) => !(m.slice(1, -1) in chained));
+  return open.length > 0 || /<[^<>]+>/.test(body);
+}
+
+function refreshMode() {
+  const text = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
+  $("mode-text").textContent = text;
+  $("mode").classList.toggle("live", live);
+  $("key-btn").textContent = live ? "API key set" : "API key";
+  $("key-remove").hidden = !live;
+  $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
+  $("migrate-btn").classList.toggle("danger", live);
+  $("migrate-title").textContent = live ? "Live migration" : "Dry-run migration";
+  $("migrate-desc").textContent = live
+    ? "These Leaseweb API calls are sent in the order shown and may create billable resources. IDs from earlier responses are filled into later calls. Fill in every other value first; calls with placeholders are skipped."
+    : "The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.";
+  disarmRun();
+}
+
+function updateRowStatus(row) {
+  const missing = needsValues(row.path.value, row.body.value, row.chained);
+  row.tr.classList.toggle("needs", missing);
+  if (row.ran) return;
+  const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, `${p} comes from ${op}`));
+  row.status.replaceChildren(missing ? el("span", { class: "pill rebuild" }, "Needs values") : el("span", { class: "pill included" }, "Ready"), ...notes);
+}
+
 function renderMigrate(calls) {
   const out = $("migrate-out");
+  migrateRows = [];
   if (!calls.length) {
     out.replaceChildren(el("p", { class: "empty" }, "No directly migratable resources."));
-  } else {
-    out.replaceChildren(
-      table(["Method", "Path", "Operation", "Request body"], calls.map((c) => {
-        const hasBody = Object.keys(c.body).length > 0;
-        return el("tr", {}, el("td", { class: "code" }, c.method), el("td", { class: "code" }, c.path),
-          el("td", { class: "code" }, c.operation_id),
-          el("td", { class: hasBody ? "body" : "body none" }, hasBody ? JSON.stringify(c.body, null, 1) : "No request body"));
-      })));
+    done.migrate = true;
+    return;
   }
+  const rows = calls.map((c, i) => {
+    const path = el("input", { class: "path-edit code", "aria-label": `Path of call ${i + 1}` });
+    path.value = c.path;
+    const body = el("textarea", { class: "body-edit", rows: Object.keys(c.body).length ? "5" : "1", spellcheck: "false", "aria-label": `Request body of call ${i + 1}`, placeholder: "No request body" });
+    body.value = Object.keys(c.body).length ? JSON.stringify(c.body, null, 1) : "";
+    const status = el("td", { class: "status" });
+    const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)), el("td", { class: "code" }, c.method), el("td", {}, path), el("td", { class: "code" }, c.operation_id), el("td", {}, body), status);
+    const row = { tr, path, body, status, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, ran: false };
+    [path, body].forEach((f) => f.addEventListener("input", () => { row.ran = false; updateRowStatus(row); }));
+    migrateRows.push(row);
+    updateRowStatus(row);
+    return tr;
+  });
+  out.replaceChildren(table(["Order", "Method", "Path", "Operation", "Request body", "Status"], rows));
+  done.migrate = false;
+}
+
+function showResults(results) {
+  results.forEach((r, i) => {
+    const row = migrateRows[i];
+    if (!row) return;
+    row.ran = true;
+    let pillEl, note = "";
+    if (r.error) { pillEl = el("span", { class: "pill bad" }, "Error"); note = r.error; }
+    else if (r.skipped) { pillEl = el("span", { class: "pill rebuild" }, "Skipped"); note = r.reason; }
+    else if (r.dry_run) { pillEl = el("span", { class: "pill included" }, "Dry run"); note = "Not sent"; }
+    else {
+      pillEl = el("span", { class: "pill " + (r.status < 400 ? "direct" : "bad") }, `Sent ${r.status}`);
+      note = typeof r.response === "string" ? r.response : JSON.stringify(r.response).slice(0, 240);
+    }
+    row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note));
+  });
+}
+
+async function prepareMigrate() {
+  const data = await call("/api/migrate/calls", null, $("migrate-out"), prepareMigrate, "GET");
+  if (!data) return;
+  live = data.live;
+  renderMigrate(data.calls);
+  refreshMode();
+}
+
+// Live runs need a second click so a stray click can never spend money.
+let runTimer = null;
+function disarmRun() {
+  clearTimeout(runTimer);
+  const b = $("migrate-btn");
+  b.classList.remove("confirm");
+  b.textContent = live ? "Run LIVE migration" : "Run dry-run migration";
+}
+
+async function migrate() {
+  if (!migrateRows.length) return;
+  const b = $("migrate-btn");
+  if (live && !b.classList.contains("confirm")) {
+    b.classList.add("confirm");
+    b.textContent = `Click again to send ${migrateRows.length} calls to Leaseweb`;
+    runTimer = setTimeout(disarmRun, 5000);
+    return;
+  }
+  disarmRun();
+  const calls = [];
+  for (let i = 0; i < migrateRows.length; i++) {
+    const r = migrateRows[i];
+    let body = {};
+    if (r.body.value.trim()) {
+      try { body = JSON.parse(r.body.value); } catch (e) { setError(`Call ${i + 1}: the request body is not valid JSON.`, null); return; }
+    }
+    calls.push({ method: r.method, path: r.path.value.trim(), operation_id: r.operation_id, body });
+  }
+  setError("");
+  const form = new URLSearchParams({ calls: JSON.stringify(calls) });
+  let res, data;
+  try {
+    res = await fetch("/api/migrate", { method: "POST", body: form });
+    data = await res.json();
+  } catch (e) { setError("Request failed. Check the server and retry.", migrate); return; }
+  if (!res.ok) { setError(data.error || "Request failed", migrate); return; }
+  live = data.live;
+  showResults(data.results);
   done.migrate = true;
+  show("migrate");
+}
+
+async function setKey(e) {
+  e.preventDefault();
+  const input = $("api-key");
+  const value = input.value;
+  input.value = "";  // clear immediately: the key is never kept in the page
+  if (!value.trim()) return;
+  try {
+    const res = await fetch("/api/key", { method: "POST", body: new URLSearchParams({ api_key: value }) });
+    if (!res.ok) throw new Error();
+  } catch (err) { setError("Could not save the API key.", null); return; }
+  setError("");
+  live = true;
+  $("keybar").hidden = true;
+  $("key-btn").setAttribute("aria-expanded", "false");
+  refreshMode();
+}
+
+async function removeKey() {
+  try { await fetch("/api/key", { method: "DELETE" }); } catch (err) { setError("Could not remove the API key.", null); return; }
+  live = false;
+  refreshMode();
 }
 
 async function discover() {
@@ -270,13 +403,15 @@ async function migrate() {
 async function restore() {
   let s;
   try { s = await (await fetch("/api/state")).json(); } catch (e) { return; }
+  live = !!s.api_key_set;
+  refreshMode();
   if (s.resource_group) $("rg").value = s.resource_group;
   (s.source_dirs || []).slice(0, MAX_FOLDERS).forEach((d, i) => { if (i === 0) folderInputs()[0].value = d; else addFolder(d); });
   let furthest = null;
   if (s.resources.length) { renderDiscover(s.resources); furthest = "discover"; }
   if (s.assessments.length) { renderAssess(s.assessments); furthest = "assess"; }
   if (s.plans.length || s.calls.length) { renderPlan(s.plans, "Nothing to plan: every resource migrates directly."); furthest = "plan"; }
-  if (s.calls.length) { renderMigrate(s.calls); furthest = "migrate"; }
+  if (s.calls.length) { renderMigrate(s.calls); done.migrate = true; furthest = "migrate"; }
   if (furthest) {
     $("restored").hidden = false;
     show(furthest);
@@ -315,6 +450,7 @@ async function resetAll() {
   $("rg").value = $("rg").defaultValue;
   $("folder-list").replaceChildren();
   addFolder();
+  migrateRows = [];
   $("restored").hidden = true;
   show("discover");
 }
@@ -330,6 +466,14 @@ $("plan-form").addEventListener("submit", (e) => { e.preventDefault(); plan(); }
 $("reset-btn").addEventListener("click", resetAll);
 $("assess-btn").addEventListener("click", assess);
 $("migrate-btn").addEventListener("click", migrate);
+$("key-btn").addEventListener("click", () => {
+  const bar = $("keybar");
+  bar.hidden = !bar.hidden;
+  $("key-btn").setAttribute("aria-expanded", String(!bar.hidden));
+  if (!bar.hidden) $("api-key").focus();
+});
+$("key-form").addEventListener("submit", setKey);
+$("key-remove").addEventListener("click", removeKey);
 $("retry").addEventListener("click", () => lastAction && lastAction());
 $("next").addEventListener("click", () => {
   const to = $("next").dataset.to;

@@ -43,3 +43,5 @@ class DryRunCall:
     path: str
     operation_id: str
     body: dict = field(default_factory=dict)
+    # path param -> operation whose response supplies it (filled in when the migration runs)
+    chained: dict = field(default_factory=dict)

@@ -162,3 +162,96 @@ def test_reset_without_persistence_and_when_nothing_saved():
     assert c.post("/api/reset").status_code == 200
     assert c.post("/api/reset").status_code == 200  # idempotent
     assert c.get("/export").text.strip().startswith("# Azure to Leaseweb")
+
+
+from tests.test_dryrun import FakeHttp, KEY
+
+
+def live_client(resources=(VM, KV), http=None, state_file=None):
+    http = http or FakeHttp()
+    c = TestClient(create_app(discover=lambda rg: list(resources), ask=plan_answer, state_file=state_file, http=http))
+    return c, http
+
+
+def good_call(**over):
+    call = {"method": "POST", "path": "/objectStorage/v1/objectStorages/abc/buckets",
+            "operation_id": "createObjectStorageBucket", "body": {"name": "my-bucket", "region": "nl-01"}}
+    call.update(over)
+    return call
+
+
+def test_set_key_never_echoed_anywhere():
+    c, _ = live_client()
+    r = c.post("/api/key", data={"api_key": KEY})
+    assert r.status_code == 200 and KEY not in r.text
+    s = c.get("/api/state")
+    assert s.json()["api_key_set"] is True and KEY not in s.text
+    assert KEY not in c.get("/export").text
+
+
+def test_empty_key_rejected_and_key_can_be_removed():
+    c, _ = live_client()
+    assert c.post("/api/key", data={"api_key": "   "}).status_code == 400
+    c.post("/api/key", data={"api_key": KEY})
+    assert c.delete("/api/key").status_code == 200
+    assert c.get("/api/state").json()["api_key_set"] is False
+
+
+def test_key_is_not_written_to_state_file(tmp_path):
+    f = tmp_path / "s.json"
+    c, _ = live_client(state_file=f)
+    run_to_assess(c)
+    c.post("/api/key", data={"api_key": KEY})
+    c.post("/api/migrate")
+    assert KEY not in f.read_text()
+
+
+def test_no_key_means_dry_run_and_nothing_sent():
+    import json as _json
+    c, http = live_client()
+    run_to_assess(c)
+    r = c.post("/api/migrate", data={"calls": _json.dumps([good_call()])}).json()
+    assert r["live"] is False and r["results"][0]["sent"] is False and r["results"][0]["dry_run"] is True
+    assert http.calls == []
+
+
+def test_key_set_means_live_and_sends_resolved_calls_only():
+    import json as _json
+    c, http = live_client()
+    run_to_assess(c)
+    c.post("/api/key", data={"api_key": KEY})
+    calls = [good_call(), good_call(body={"name": "<bucket-name>", "region": "nl-01"})]
+    r = c.post("/api/migrate", data={"calls": _json.dumps(calls)}).json()
+    assert r["live"] is True
+    assert r["results"][0]["sent"] is True and r["results"][1]["skipped"] is True
+    assert len(http.calls) == 1 and http.calls[0][2]["headers"]["X-LSW-Auth"] == KEY
+    assert KEY not in _json.dumps(r)
+
+
+def test_migrate_rejects_calls_not_matching_the_specs():
+    import json as _json
+    c, http = live_client()
+    run_to_assess(c)
+    c.post("/api/key", data={"api_key": KEY})
+    for bad in (good_call(operation_id="deleteEverything"),
+                good_call(path="/publicCloud/v1/instances"),
+                good_call(method="DELETE")):
+        r = c.post("/api/migrate", data={"calls": _json.dumps([bad])})
+        assert r.status_code == 400
+    assert http.calls == []
+
+
+def test_calls_endpoint_returns_prepared_calls_and_mode():
+    c, _ = live_client()
+    run_to_assess(c)
+    r = c.get("/api/migrate/calls").json()
+    assert r["live"] is False and r["calls"][0]["operation_id"] == "launchInstance"
+    c.post("/api/key", data={"api_key": KEY})
+    assert c.get("/api/migrate/calls").json()["live"] is True
+
+
+def test_reset_keeps_key_in_memory_only():
+    c, _ = live_client()
+    c.post("/api/key", data={"api_key": KEY})
+    c.post("/api/reset")
+    assert c.get("/api/state").json()["api_key_set"] is True
