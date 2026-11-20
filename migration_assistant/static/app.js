@@ -467,8 +467,9 @@ function disarmRow(row) {
 async function runRow(row) {
   if (live && !row.runBtn.classList.contains("confirm")) {
     row.runBtn.classList.add("confirm");
-    row.runBtn.textContent = "Click again to send";
-    row.armTimer = setTimeout(() => disarmRow(row), 5000);
+    row.runBtn.textContent = "Click again to send LIVE";
+    row.armTimer = setTimeout(() => disarmRow(row), 15000);
+    row.runBtn.addEventListener("blur", () => disarmRow(row), { once: true });  // clicking elsewhere cancels
     return;
   }
   disarmRow(row);
@@ -517,7 +518,8 @@ async function migrate() {
     b.classList.add("confirm");
     const skipped = migrateRows.filter((r) => r.fields.some(missingField)).length;
     b.textContent = `Click again to send ${migrateRows.length - skipped} calls to Leaseweb` + (skipped ? ` (${skipped} need values and will be skipped)` : "");
-    runTimer = setTimeout(disarmRun, 5000);
+    runTimer = setTimeout(disarmRun, 15000);
+    b.addEventListener("blur", disarmRun, { once: true });  // clicking elsewhere cancels
     return;
   }
   disarmRun();
