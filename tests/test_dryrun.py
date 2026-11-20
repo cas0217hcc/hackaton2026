@@ -177,3 +177,16 @@ def test_placeholder_bodies_match_the_spec_request_schemas():
         body = PLACEHOLDER_BODIES[op]
         assert set(body) <= set(spec["properties"]), f"{op}: unknown fields {set(body) - set(spec['properties'])}"
         assert set(spec.get("required", [])) <= set(body), f"{op}: missing {set(spec.get('required', [])) - set(body)}"
+
+
+def test_run_calls_shares_ids_across_separate_runs():
+    http = SeqHttp()
+    ex = LeasewebExecutor(KEY, http)
+    ids: dict = {}
+    launch = DryRunCall("POST", "/publicCloud/v1/instances", "launchInstance",
+                        {"region": "eu-west-3", "type": "t", "imageId": "i", "contractType": "HOURLY", "rootDiskSize": 50, "rootDiskStorageType": "CENTRAL", "reference": "x"})
+    run_calls([launch], ex, ids)
+    assert ids == {"instanceId": "id-1"}
+    attach = DryRunCall("PUT", "/publicCloud/v1/instances/{instanceId}/addToPrivateNetwork", "addToPrivateNetwork", {})
+    [res] = run_calls([attach], ex, ids)
+    assert res["sent"] is True and res["path"] == "/publicCloud/v1/instances/id-1/addToPrivateNetwork"

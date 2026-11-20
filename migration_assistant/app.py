@@ -64,6 +64,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     state = _load(state_file)
     progress: dict = {"running": False, "items": []}  # live status of the current plan run
     progress_lock = threading.Lock()
+    chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     ops = load_operations()
     launch_options = load_launch_options()
@@ -85,7 +86,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "api_key_set": bool(secrets["api_key"])}
+        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "chain": dict(chain)}
 
     @app.post("/api/key")
     def api_set_key(api_key: str = Form("")):
@@ -104,6 +105,7 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
     def api_reset():
         state.clear()
         state.update(_empty_state())
+        chain.clear()
         if state_file is not None:
             state_file.unlink(missing_ok=True)
         return _dump(state)
@@ -206,27 +208,51 @@ def create_app(discover: Callable = list_resources, ask: Callable = ask_json,
                 pass
         return {"options": {"launchInstance": {**launch_options, "region": regions}}, "source": source}
 
+    def spec_error(calls: list[DryRunCall]) -> str | None:
+        """Only spec operations may be sent, with the spec's method and path shape."""
+        for c in calls:
+            spec = ops.get(c.operation_id)
+            if not spec or spec[0] != c.method or not path_matches(spec[1], c.path):
+                return f"Call {c.operation_id} does not match the Leaseweb specs."
+        return None
+
+    def to_calls(raw: list) -> list[DryRunCall]:
+        return [DryRunCall(c["method"], c["path"], c["operation_id"], dict(c.get("body") or {})) for c in raw]
+
     @app.post("/api/migrate")
     def api_migrate(calls: str = Form("")):
         if not state["assessments"]:
             return error("Run Assess first.", 409)
         if calls:
             try:
-                prepared = [DryRunCall(c["method"], c["path"], c["operation_id"], dict(c.get("body") or {}))
-                            for c in json.loads(calls)]
+                prepared = to_calls(json.loads(calls))
             except (ValueError, TypeError, KeyError):
                 return error("Invalid calls.", 400)
-            for c in prepared:  # only spec operations may be sent, with the spec's method and path shape
-                spec = ops.get(c.operation_id)
-                if not spec or spec[0] != c.method or not path_matches(spec[1], c.path):
-                    return error(f"Call {c.operation_id} does not match the Leaseweb specs.", 400)
+            problem = spec_error(prepared)
+            if problem:
+                return error(problem, 400)
         else:
             prepared = build_calls(state["assessments"], ops)
         annotate_chain(prepared)
         state["calls"] = prepared
         save()
-        results = run_calls(prepared, executor())
-        return {"live": bool(secrets["api_key"]), "calls": [asdict(c) for c in prepared], "results": results}
+        chain.clear()  # a full run starts from a clean slate and repopulates the ids
+        results = run_calls(prepared, executor(), chain)
+        return {"live": bool(secrets["api_key"]), "calls": [asdict(c) for c in prepared], "results": results,
+                "chain": dict(chain)}
+
+    @app.post("/api/migrate/run-one")
+    def api_migrate_run_one(call: str = Form("")):
+        """Run a single call, using ids remembered from earlier runs for its {path params}."""
+        try:
+            prepared = to_calls([json.loads(call)])
+        except (ValueError, TypeError, KeyError):
+            return error("Invalid call.", 400)
+        problem = spec_error(prepared)
+        if problem:
+            return error(problem, 400)
+        [result] = run_calls(prepared, executor(), chain)
+        return {"live": bool(secrets["api_key"]), "result": result, "chain": dict(chain)}
 
     @app.get("/export", response_class=PlainTextResponse)
     def export():

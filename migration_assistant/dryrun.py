@@ -118,9 +118,12 @@ class LeasewebExecutor:
         return {**base, "sent": True, "status": resp.status_code, "response": payload}
 
 
-def run_calls(calls: list[DryRunCall], executor: Executor) -> list[dict]:
-    """Run calls in order, filling {path params} from earlier responses (live runs only produce ids)."""
-    ids: dict[str, str] = {}
+def run_calls(calls: list[DryRunCall], executor: Executor, ids: dict[str, str] | None = None) -> list[dict]:
+    """Run calls in order, filling {path params} from earlier responses (live runs only produce ids).
+
+    `ids` can be shared between runs so a single call can use ids produced by an earlier run.
+    """
+    ids = {} if ids is None else ids
     results = []
     for c in calls:
         path = c.path
@@ -130,7 +133,7 @@ def run_calls(calls: list[DryRunCall], executor: Executor) -> list[dict]:
         if result.get("skipped"):
             for param, producer in c.chained.items():
                 if "{" + param + "}" in path:
-                    result["reason"] += f" ({param} comes from {producer}, which did not succeed)"
+                    result["reason"] += f" ({param} comes from {producer}, which has not succeeded yet)"
         resp = result.get("response")
         if (result.get("sent") and 200 <= result.get("status", 0) < 300 and isinstance(resp, dict)
                 and c.operation_id in PRODUCES and _SAFE_ID.fullmatch(str(resp.get("id", "")))):

@@ -307,3 +307,71 @@ def test_options_endpoint_falls_back_to_spec_when_live_lookup_fails():
     c.post("/api/key", data={"api_key": KEY})
     r = c.get("/api/migrate/options").json()
     assert r["source"] == "spec" and r["options"]["launchInstance"]["region"]
+
+
+LAUNCH = {"method": "POST", "path": "/publicCloud/v1/instances", "operation_id": "launchInstance",
+          "body": {"region": "eu-west-3", "type": "lsw.c3.large", "imageId": "UBUNTU_22_04_64BIT", "contractType": "HOURLY",
+                   "rootDiskSize": 50, "rootDiskStorageType": "CENTRAL", "reference": "web"}}
+ATTACH = {"method": "PUT", "path": "/publicCloud/v1/instances/{instanceId}/addToPrivateNetwork",
+          "operation_id": "addToPrivateNetwork", "body": {}}
+
+
+def run_one(c, call):
+    import json as _json
+    return c.post("/api/migrate/run-one", data={"call": _json.dumps(call)})
+
+
+def seq_client():
+    from tests.test_dryrun import SeqHttp
+    c, http = live_client(http=SeqHttp())
+    run_to_assess(c)
+    return c, http
+
+
+def test_run_one_in_dry_run_mode_sends_nothing():
+    c, http = seq_client()
+    r = run_one(c, LAUNCH).json()
+    assert r["live"] is False and r["result"]["dry_run"] is True and r["result"]["sent"] is False
+    assert http.calls == []
+
+
+def test_run_one_remembers_ids_for_later_single_runs():
+    c, http = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    first = run_one(c, LAUNCH).json()
+    assert first["result"]["sent"] is True and first["chain"] == {"instanceId": "id-1"}
+    second = run_one(c, ATTACH).json()
+    assert second["result"]["sent"] is True
+    assert http.calls[1][1].endswith("/instances/id-1/addToPrivateNetwork")
+
+
+def test_run_one_skips_when_the_needed_id_does_not_exist_yet():
+    c, http = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    r = run_one(c, ATTACH).json()["result"]
+    assert r["sent"] is False and r["skipped"] is True and "instanceId" in r["reason"]
+    assert http.calls == []
+
+
+def test_run_one_rejects_calls_that_do_not_match_the_specs():
+    c, http = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    assert run_one(c, {**LAUNCH, "operation_id": "deleteEverything"}).status_code == 400
+    assert run_one(c, {**LAUNCH, "method": "DELETE"}).status_code == 400
+    assert http.calls == []
+
+
+def test_start_over_forgets_remembered_ids():
+    c, http = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    run_one(c, LAUNCH)
+    c.post("/api/reset")
+    run_to_assess(c)
+    assert run_one(c, ATTACH).json()["result"]["skipped"] is True
+
+
+def test_state_endpoint_exposes_remembered_ids():
+    c, _ = seq_client()
+    c.post("/api/key", data={"api_key": KEY})
+    run_one(c, LAUNCH)
+    assert c.get("/api/state").json()["chain"] == {"instanceId": "id-1"}

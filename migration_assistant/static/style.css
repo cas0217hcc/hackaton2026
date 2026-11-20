@@ -51,6 +51,11 @@ td.seq { width: 52px; color: var(--mute); font-variant-numeric: tabular-nums; }
 select.value-input { padding: 6px 7px; cursor: pointer; }
 textarea.value-input { resize: vertical; font-size: 12px; line-height: 1.45; }
 tr.needs input.value-input:placeholder-shown { border-color: #e0b36a; background: #fffdf8; }
+td.run-cell { width: 110px; text-align: right; }
+.row-run { padding: 5px 12px; white-space: nowrap; }
+.btn.row-run.danger { background: #fff; color: #b4401a; border-color: #b4401a; }
+.btn.row-run.danger:hover { background: #fdf0ea; }
+.btn.row-run.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
 td.status { min-width: 130px; }
 .status-note { margin-top: 4px; color: var(--mute); font-size: 12px; overflow-wrap: anywhere; max-width: 260px; }
 tr.needs td { background: #fffaf0; }

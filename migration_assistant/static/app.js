@@ -288,6 +288,7 @@ function renderPlan(plans, message) {
 
 let live = false;
 let migrateRows = [];
+let chainIds = {};  // ids returned by earlier live calls, e.g. instanceId
 
 function refreshMode() {
   const text = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
@@ -302,6 +303,7 @@ function refreshMode() {
     ? "These Leaseweb API calls are sent in the order shown and may create billable resources. IDs from earlier responses are filled into later calls. Fill in every other value first; calls with placeholders are skipped."
     : "The Leaseweb API calls that would migrate the direct resources, in the order they would run. Nothing is sent.";
   disarmRun();
+  refreshRowButtons();
 }
 
 const PLACEHOLDER = /<([^<>]+)>/;
@@ -383,8 +385,10 @@ function collectCall(row) {
 function updateRowStatus(row) {
   const missing = row.fields.filter(missingField).length;
   row.tr.classList.toggle("needs", missing > 0);
+  row.runBtn.disabled = missing > 0;  // also for rows that already ran, so they can be retried
+  row.runBtn.title = missing > 0 ? "Fill in the required values first" : "";
   if (row.ran) return;
-  const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, `${p} comes from ${op}`));
+  const notes = Object.entries(row.chained).map(([p, op]) => el("div", { class: "status-note code" }, chainIds[p] ? `${p} = ${chainIds[p]} (from ${op})` : `${p} comes from ${op}`));
   row.status.replaceChildren(
     missing ? el("span", { class: "pill rebuild" }, `Needs ${missing} value${missing > 1 ? "s" : ""}`) : el("span", { class: "pill included" }, "Ready"),
     ...notes);
@@ -406,34 +410,86 @@ function renderMigrate(calls) {
           f.input]))
       : el("p", { class: "note" }, "No values to set");
     const status = el("td", { class: "status" });
+    const runBtn = el("button", { type: "button", class: "btn secondary row-run", "aria-label": `Run call ${i + 1}: ${c.operation_id}` }, "Run");
     const tr = el("tr", {}, el("td", { class: "seq" }, String(i + 1)),
       el("td", {}, el("div", { class: "op code" }, c.operation_id), el("div", { class: "call code" }, `${c.method} ${c.path}`)),
-      el("td", {}, values), status);
-    const row = { tr, status, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false };
+      el("td", {}, values), status, el("td", { class: "run-cell" }, runBtn));
+    const row = { tr, status, runBtn, method: c.method, operation_id: c.operation_id, chained: c.chained || {}, pathTemplate: c.path, baseBody: c.body || {}, fields, ran: false };
     fields.forEach((f) => ["input", "change"].forEach((ev) => f.input.addEventListener(ev, () => { row.ran = false; updateRowStatus(row); })));
+    runBtn.addEventListener("click", () => runRow(row));
     migrateRows.push(row);
     updateRowStatus(row);
     return tr;
   });
-  out.replaceChildren(table(["Order", "Call", "Values", "Status"], rows));
+  out.replaceChildren(table(["Order", "Call", "Values", "Status", "Run"], rows));
   done.migrate = false;
+  refreshRowButtons();
+}
+
+function showResult(row, r) {
+  row.ran = true;
+  let pillEl, note = "";
+  if (r.error) { pillEl = el("span", { class: "pill bad" }, "Error"); note = r.error; }
+  else if (r.skipped) { pillEl = el("span", { class: "pill rebuild" }, "Skipped"); note = r.reason; }
+  else if (r.dry_run) { pillEl = el("span", { class: "pill included" }, "Dry run"); note = "Not sent"; }
+  else {
+    pillEl = el("span", { class: "pill " + (r.status < 400 ? "direct" : "bad") }, `Sent ${r.status}`);
+    note = typeof r.response === "string" ? r.response : JSON.stringify(r.response).slice(0, 240);
+  }
+  row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note));
 }
 
 function showResults(results) {
-  results.forEach((r, i) => {
-    const row = migrateRows[i];
-    if (!row) return;
-    row.ran = true;
-    let pillEl, note = "";
-    if (r.error) { pillEl = el("span", { class: "pill bad" }, "Error"); note = r.error; }
-    else if (r.skipped) { pillEl = el("span", { class: "pill rebuild" }, "Skipped"); note = r.reason; }
-    else if (r.dry_run) { pillEl = el("span", { class: "pill included" }, "Dry run"); note = "Not sent"; }
-    else {
-      pillEl = el("span", { class: "pill " + (r.status < 400 ? "direct" : "bad") }, `Sent ${r.status}`);
-      note = typeof r.response === "string" ? r.response : JSON.stringify(r.response).slice(0, 240);
-    }
-    row.status.replaceChildren(pillEl, el("div", { class: "status-note code" }, note));
+  results.forEach((r, i) => { if (migrateRows[i]) showResult(migrateRows[i], r); });
+}
+
+// Remembered ids can unlock rows that depend on them; refresh the notes of rows that have not run.
+function setChain(chain) {
+  chainIds = chain || {};
+  migrateRows.forEach((r) => { if (!r.ran) updateRowStatus(r); });
+}
+
+function refreshRowButtons() {
+  migrateRows.forEach((r) => {
+    r.runBtn.classList.remove("confirm");
+    r.runBtn.classList.toggle("danger", live);
+    r.runBtn.textContent = live ? "Run live" : "Run";
   });
+}
+
+function disarmRow(row) {
+  clearTimeout(row.armTimer);
+  row.runBtn.classList.remove("confirm");
+  row.runBtn.textContent = live ? "Run live" : "Run";
+}
+
+// Run one call. Live runs need a second click, like the full migration.
+async function runRow(row) {
+  if (live && !row.runBtn.classList.contains("confirm")) {
+    row.runBtn.classList.add("confirm");
+    row.runBtn.textContent = "Click again to send";
+    row.armTimer = setTimeout(() => disarmRow(row), 5000);
+    return;
+  }
+  disarmRow(row);
+  let call;
+  try { call = collectCall(row); } catch (e) { setError(`${row.operation_id}: ${e.message}.`, null); return; }
+  setError("");
+  row.runBtn.disabled = true;
+  let res, data;
+  try {
+    res = await fetch("/api/migrate/run-one", { method: "POST", body: new URLSearchParams({ call: JSON.stringify(call) }) });
+    data = await res.json();
+  } catch (e) {
+    setError("Request failed. Check the server and retry.", null);
+    updateRowStatus(row);
+    return;
+  }
+  if (!res.ok) { setError(data.error || "Request failed", null); updateRowStatus(row); return; }
+  live = data.live;
+  showResult(row, data.result);
+  setChain(data.chain);
+  updateRowStatus(row);
 }
 
 async function prepareMigrate() {
@@ -479,6 +535,7 @@ async function migrate() {
   if (!res.ok) { setError(data.error || "Request failed", migrate); return; }
   live = data.live;
   showResults(data.results);
+  setChain(data.chain);
   done.migrate = true;
   show("migrate");
 }
@@ -596,6 +653,7 @@ async function restore() {
   let s;
   try { s = await (await fetch("/api/state")).json(); } catch (e) { return; }
   live = !!s.api_key_set;
+  chainIds = s.chain || {};
   refreshMode();
   if (s.resource_group) $("rg").value = s.resource_group;
   (s.source_dirs || []).slice(0, MAX_FOLDERS).forEach((d, i) => { if (i === 0) folderInputs()[0].value = d; else addFolder(d); });
