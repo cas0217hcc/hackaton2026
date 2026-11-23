@@ -105,6 +105,65 @@ def load_operation_docs(specs_dir: Path = Path("leaseweb-api")) -> dict[str, dic
     return docs
 
 
+def load_responses(specs_dir: Path = Path("leaseweb-api")) -> dict[str, dict]:
+    """operationId -> its success response in the specs: {"status": int, "example": JSON or None,
+    "schema": node or None, "base": folder its $refs are relative to}. Used by the fake Leaseweb API (mock/leaseweb.py),
+    so what it answers has the shape Leaseweb documents."""
+    out: dict[str, dict] = {}
+    for name in SPEC_DIRS:
+        root = specs_dir / name
+        spec = yaml.safe_load((root / "openapi.yaml").read_text())
+        for path, item in spec.get("paths", {}).items():
+            ref = item.get("$ref") if isinstance(item, dict) else None
+            base = root
+            if ref:
+                base = (root / ref).resolve().parent
+                item = yaml.safe_load((root / ref).read_text())
+            for method in METHODS:
+                op = item.get(method)
+                if not (op and op.get("operationId")):
+                    continue
+                codes = sorted(c for c in (op.get("responses") or {}) if str(c).isdigit() and 200 <= int(c) < 300)
+                if not codes:
+                    continue
+                resp, resp_base = _load_ref(op["responses"][codes[0]], base)
+                media = ((resp.get("content") or {}).get("application/json") or {})
+                out[op["operationId"]] = {"status": int(codes[0]), "example": media.get("example"),
+                                          "schema": media.get("schema"), "base": resp_base}
+    return out
+
+
+_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "integer": int, "number": (int, float)}
+
+
+def schema_errors(value, node, base: Path, where: str = "$", depth: int = 0) -> list[str]:
+    """Where `value` breaks an OpenAPI 3.0 schema. Covers what the Leaseweb specs use: $ref, type, nullable,
+    enum, required, properties, items and allOf. Unknown keywords are ignored, so this errs on accepting."""
+    if node is None or depth > 40:
+        return []
+    node, base = _load_ref(node, base)
+    if value is None:
+        return [] if node.get("nullable") or not node.get("type") else [f"{where}: null is not allowed"]
+    errors: list[str] = []
+    for part in node.get("allOf") or []:
+        errors += schema_errors(value, part, base, where, depth + 1)
+    kind = node.get("type")
+    expected = _TYPES.get(kind)
+    if expected and (not isinstance(value, expected) or (kind in ("integer", "number") and isinstance(value, bool))):
+        return errors + [f"{where}: expected {kind}, got {type(value).__name__}"]
+    if node.get("enum") and value not in node["enum"]:
+        errors.append(f"{where}: {value!r} is not one of {node['enum']}")
+    if isinstance(value, dict):
+        errors += [f"{where}: missing {k}" for k in node.get("required") or [] if k not in value]
+        for k, sub in (node.get("properties") or {}).items():
+            if k in value:
+                errors += schema_errors(value[k], sub, base, f"{where}.{k}", depth + 1)
+    if isinstance(value, list) and node.get("items"):
+        for i, v in enumerate(value):
+            errors += schema_errors(v, node["items"], base, f"{where}[{i}]", depth + 1)
+    return errors
+
+
 def find_operations(text: str, op_ids) -> list[str]:
     """Operation ids named in free text, in order of first appearance (whole words only)."""
     if not text or not op_ids:

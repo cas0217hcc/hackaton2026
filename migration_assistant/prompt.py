@@ -1,10 +1,10 @@
 """A prompt that also says what it asks and carries its inputs.
 
-Real providers only see the text (a Prompt is a str). A stand-in AI such as mock.py reads `task` and `data`
+Real providers only see the text (a Prompt is a str). A stand-in AI such as mock/ai.py reads `task` and `data`
 instead of parsing the wording, so rewording a prompt can never silently break it.
 """
 
-# The tasks the app asks the AI for. mock.py must answer each one; a test checks that it does.
+# The tasks the app asks the AI for. mock/ai.py must answer each one; a test checks that it does.
 TASKS = ("test", "assess_type", "dependencies", "select_sources", "plan")
 
 

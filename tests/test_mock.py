@@ -14,8 +14,11 @@ from migration_assistant.azure_discovery import DiscoveryError
 from migration_assistant.claude_cli import ClaudeError
 from migration_assistant.dependencies import add_dependencies
 from migration_assistant.envfile import parse_env
-from migration_assistant.mock import (FIXTURE, MOCK_PROVIDER, PARTS, MockHttp, MockResponse, describe, mock_ask,
-                                      mock_discover, mock_overrides, mock_parts)
+from migration_assistant.mock import (FIXTURE, MOCK_PROVIDER, PARTS, MockAI, MockAzure, MockHttp, MockResponse,
+                                      describe, mock_overrides, mock_parts)
+
+mock_ask = MockAI().ask
+mock_discover = MockAzure().discover
 from migration_assistant.plan import build_plans, select_sources
 from migration_assistant.prompt import TASKS, Prompt
 
@@ -62,7 +65,7 @@ def test_mock_switches_can_come_from_the_env_file(monkeypatch, tmp_path):
     env = tmp_path / ".env"
     env.write_text("MOCK_AI=1      # canned answers\nMOCK_LEASEWEB=1\n")
     app_module._app_from_env(env)
-    assert seen["ask"] is mock_ask and isinstance(seen["http"], MockHttp) and "discover" not in seen
+    assert isinstance(seen["ask"].__self__, MockAI) and isinstance(seen["http"], MockHttp) and "discover" not in seen
     assert seen["notice"] == describe({"ai", "leaseweb"})
 
 
@@ -252,3 +255,108 @@ def test_the_real_app_mocks_nothing_and_labels_nothing():
     r = real.get("/export/calls.json")
     assert "mock-" not in r.headers["content-disposition"] and "x-mock-notice" not in r.headers
     assert [p for p in real.get("/api/ai").json()["providers"] if p == MOCK_PROVIDER] == []
+
+
+# ---- the fake Leaseweb API: follows the specs and keeps what it creates
+
+from migration_assistant.leaseweb_ops import load_responses, schema_errors  # noqa: E402
+from migration_assistant.mock import FakeLeaseweb  # noqa: E402
+
+LAUNCH = {"region": "eu-west-3", "type": "lsw.c3.large", "imageId": "UBUNTU_22_04_64BIT", "contractType": "HOURLY",
+          "rootDiskSize": 50, "rootDiskStorageType": "CENTRAL", "reference": "api"}
+
+
+def test_the_schema_check_catches_a_wrong_shape():
+    spec = load_responses()["launchInstance"]
+    assert schema_errors(spec["example"], spec["schema"], spec["base"]) == []
+    assert schema_errors({**spec["example"], "state": "FLYING"}, spec["schema"], spec["base"])
+    assert schema_errors({**spec["example"], "rootDiskSize": "big"}, spec["schema"], spec["base"])
+    assert schema_errors({k: v for k, v in spec["example"].items() if k != "id"}, spec["schema"], spec["base"])
+
+
+def test_every_fake_answer_matches_the_spec():
+    """Drive the whole lifecycle and check each answer against its operation's response schema and status."""
+    api, specs = FakeLeaseweb(), load_responses()
+    checked = []
+
+    def call(method, path, body=None):
+        op, _ = api.route(method, path)
+        status, payload = api.handle(method, path, body)
+        assert status == specs[op]["status"], (op, status)
+        if payload is not None and specs[op]["schema"]:
+            assert schema_errors(payload, specs[op]["schema"], specs[op]["base"]) == [], op
+        checked.append(op)
+        return payload
+
+    inst = call("POST", "/publicCloud/v1/instances", LAUNCH)
+    call("GET", f"/publicCloud/v1/instances/{inst['id']}")
+    call("GET", "/publicCloud/v1/instances")
+    group = call("POST", "/publicCloud/v1/securityGroups", {"name": "apps"})
+    call("POST", f"/publicCloud/v1/securityGroups/{group['id']}/authorizeFirewallRules", {"rules": []})
+    net = call("POST", "/bareMetals/v2/privateNetworks", {"name": "vnet-hack"})
+    call("PUT", f"/publicCloud/v1/instances/{inst['id']}/addToPrivateNetwork", {})
+    call("POST", "/objectStorage/v1/objectStorages/os-1/buckets", {"name": "product-images"})
+    call("GET", "/publicCloud/v1/regions")
+    call("GET", "/publicCloud/v1/instanceTypes")
+    call("DELETE", "/objectStorage/v1/objectStorages/os-1/buckets/product-images")
+    call("DELETE", f"/bareMetals/v2/privateNetworks/{net['id']}")
+    call("DELETE", f"/publicCloud/v1/securityGroups/{group['id']}")
+    call("DELETE", f"/publicCloud/v1/instances/{inst['id']}")
+    assert len(set(checked)) == 14
+
+
+def test_the_fake_api_keeps_state_like_leaseweb():
+    api = FakeLeaseweb()
+    _, inst = api.handle("POST", "/publicCloud/v1/instances", LAUNCH)
+    assert inst["state"] == "CREATING" and inst["reference"] == "api" and inst["image"]["id"] == "UBUNTU_22_04_64BIT"
+    assert api.handle("PUT", f"/publicCloud/v1/instances/{inst['id']}/addToPrivateNetwork", {})[0] == 409  # not up yet
+    _, listed = api.handle("GET", "/publicCloud/v1/instances")
+    assert [i["id"] for i in listed["instances"]] == [inst["id"]] and listed["_metadata"]["totalCount"] == 1
+    assert api.handle("GET", f"/publicCloud/v1/instances/{inst['id']}")[1]["state"] == "RUNNING"
+    assert api.handle("PUT", f"/publicCloud/v1/instances/{inst['id']}/addToPrivateNetwork", {})[0] == 202
+    assert api.handle("DELETE", f"/publicCloud/v1/instances/{inst['id']}")[0] == 200
+    assert api.handle("DELETE", f"/publicCloud/v1/instances/{inst['id']}")[0] == 404  # already gone
+    assert api.handle("GET", f"/publicCloud/v1/instances/{inst['id']}")[0] == 404
+    assert api.handle("POST", "/objectStorage/v1/objectStorages/os-1/buckets", {"name": "b"})[0] == 201
+    assert api.handle("POST", "/objectStorage/v1/objectStorages/os-1/buckets", {"name": "b"})[0] == 409
+    assert api.handle("GET", "/publicCloud/v1/notAnOperation")[0] == 404
+
+
+def test_an_app_run_leaves_the_fake_api_clean_after_teardown(client):
+    run_to_plan(client)
+    run = client.post("/api/migrate").json()
+    launched = [r for r in run["results"] if r["operation_id"] == "launchInstance" and r.get("status") == 201]
+    listed = client.get("/api/state").json()["created"]
+    assert launched and len([c for c in listed if c["operation_id"] == "launchInstance"]) == len(launched)
+    assert client.post("/api/migrate/teardown").json()["created"] == []
+
+
+# ---- settings, the environment and delays
+
+def test_the_subscription_is_shared_by_real_and_mock_runs(tmp_path):
+    subs = lambda: [{"id": "sub-1", "name": "Hackathon", "is_default": False}]
+    real = TestClient(create_app(state_file=tmp_path / "state.json", ask=lambda p: {}, subscriptions_fn=subs))
+    real.post("/api/azure/subscription", data={"subscription_id": "sub-1"})
+    mock_ai_only = TestClient(create_app(**{**mock_overrides({"ai"}), "state_file": tmp_path / "mock-state.json",
+                                            "subscriptions_fn": subs}))
+    assert mock_ai_only.get("/api/azure/subscriptions").json()["selected"] == "sub-1"
+    mock_azure = TestClient(create_app(**{**mock_overrides({"azure"}), "state_file": tmp_path / "mock-state.json"}))
+    mock_azure.post("/api/azure/subscription", data={"subscription_id": "00000000-0000-4000-8000-000000000000"})
+    assert json.loads((tmp_path / "settings.json").read_text())["subscription"] == "sub-1"  # the fake one is not kept
+    real.post("/api/reset")
+    assert real.get("/api/azure/subscriptions").json()["selected"] == "sub-1"
+
+
+def test_the_mock_package_never_reads_the_environment():
+    for f in (ROOT / "migration_assistant" / "mock").glob("*.py"):
+        assert "os.environ" not in f.read_text(), f.name
+
+
+def test_the_delay_is_passed_in(monkeypatch):
+    from migration_assistant.mock import _pause, delay_from
+    waits = []
+    monkeypatch.setattr(_pause.time, "sleep", waits.append)
+    assert delay_from({"MOCK_DELAY": "0.5"}) == 0.5 and delay_from({}) == 1.0 and delay_from({"MOCK_DELAY": "x"}) == 1.0
+    MockAI(delay=2).ask(Prompt("ok?", "test"))
+    MockAI(delay=0).ask(Prompt("ok?", "test"))
+    assert waits == [0.6]

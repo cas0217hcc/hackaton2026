@@ -112,11 +112,14 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                pick_folder: Callable = default_pick_folder, git_runner: Callable | None = None,
                wait_timeout: float = 600, azure_status_fn: Callable = default_azure_status,
                subscriptions_fn: Callable = default_list_subscriptions, notice: str = "",
-               ai_providers: list[dict] | None = None, api_key: str | None = None) -> FastAPI:
+               ai_providers: list[dict] | None = None, api_key: str | None = None,
+               settings_file: Path | None | str = "next to state_file") -> FastAPI:
     """notice: a warning shown in a banner and at the top of every export (mock mode says what is fake).
+    settings_file: where settings that are not results are kept (the Azure subscription), so they are shared
+    between real and mock runs and survive Start over. None: not kept (mock Azure, whose subscription is fake).
     ai_providers: the only AI providers to offer, instead of the installed ones; the first is selected.
     api_key: a Leaseweb key to start with. Only accepted with a fake HTTP client (`http.fake`), so a made-up
-    key can never be sent to the real Leaseweb API. mock.py fills all of these for mock mode."""
+    key can never be sent to the real Leaseweb API. mock/__init__.py fills all of these for mock mode."""
     fake_leaseweb = bool(getattr(http, "fake", False))
     if api_key and not fake_leaseweb:
         raise ValueError("api_key is only accepted together with a fake Leaseweb client")
@@ -137,6 +140,15 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     state = _load(state_file)
+    if settings_file == "next to state_file":
+        settings_file = state_file.parent / "settings.json" if state_file is not None else None
+    if settings_file is not None and settings_file.exists():
+        try:
+            saved_sub = json.loads(settings_file.read_text()).get("subscription")
+            if isinstance(saved_sub, str):
+                state["subscription"] = saved_sub
+        except (ValueError, AttributeError, OSError):
+            pass  # a damaged file just means the subscription saved with the results (or none)
     progress: dict = {"running": False, "items": []}  # live status of the current plan run
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
@@ -282,6 +294,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                 return error("That subscription is not available to your Azure account.", 400)
         state["subscription"] = wanted
         save()
+        if settings_file is not None:
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            settings_file.write_text(json.dumps({"subscription": wanted}))
         return {"selected": wanted}
 
     @app.get("/api/resource-groups")
@@ -636,13 +651,13 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
 def _app_from_env(env_file: Path = ENV_FILE) -> FastAPI:
     """Settings come from the environment, then from .env in the repo root (see .env.example).
-    MOCK_AZURE, MOCK_AI and MOCK_LEASEWEB mock one part each, MOCK_MODE all three (see mock.py)."""
+    MOCK_AZURE, MOCK_AI and MOCK_LEASEWEB mock one part each, MOCK_MODE all three (see mock/)."""
     load_env(env_file)
-    from .mock import describe, mock_overrides, mock_parts
-    parts = mock_parts()
+    from .mock import delay_from, describe, mock_overrides, mock_parts
+    parts = mock_parts(os.environ)
     if parts:
         print("WARNING: " + describe(parts), flush=True)
-        return create_app(**mock_overrides(parts))
+        return create_app(**mock_overrides(parts, delay=delay_from(os.environ)))
     return create_app()
 
 

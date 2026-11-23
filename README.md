@@ -98,7 +98,7 @@ Each outside service can be mocked on its own, so you can, for example, read you
 |---|---|---|
 | `MOCK_AZURE=1` | `--mock-azure` / `-MockAzure` | Discover returns a saved, scrubbed copy of `hackaton-2026-rg` (33 resources, `migration_assistant/mock_data/`). `az` is not used. |
 | `MOCK_AI=1` | `--mock-ai` / `-MockAi` | Assess and Manual migration get canned answers, so no tokens are spent. The answers follow the real configuration: dependencies come from the endpoints and names in each resource's settings. |
-| `MOCK_LEASEWEB=1` | `--mock-leaseweb` / `-MockLeaseweb` | The app starts with a mock key, and live calls and teardown go to a fake Leaseweb API. Nothing is sent to Leaseweb. Remove the key to go back to dry run. |
+| `MOCK_LEASEWEB=1` | `--mock-leaseweb` / `-MockLeaseweb` | The app starts with a mock key, and live calls and teardown go to a fake Leaseweb API. It follows the vendored specs: answers have the documented shape and status, and it remembers what it created (instances start `CREATING`, then run; deleting something twice is a 404). Nothing is sent to Leaseweb. Remove the key to go back to dry run. |
 | `MOCK_MODE=1` | `--mock` / `-Mock` | All three. Nothing leaves your machine. |
 
 ```bash
@@ -106,7 +106,7 @@ Each outside service can be mocked on its own, so you can, for example, read you
 .\start.ps1 -MockAi -MockLeaseweb            # Windows PowerShell (start.bat takes the same switches)
 ```
 
-To make a choice the default, put the switches in a `.env` file (see [The .env file](#the-env-file)). A banner in the app and a warning in the console say which parts are mocked and which are real, and every export says so too: downloads are named `mock-...` and start with the same notice. Results are saved to `data/mock-state.json` whenever anything is mocked, so they never mix with real ones. Add `demo_app/api` and `demo_app/worker` as source folders to see code changes; the mock diffs pass `git apply --check`. `MOCK_DELAY=0` removes the short pauses that make the loading states visible.
+To make a choice the default, put the switches in a `.env` file (see [The .env file](#the-env-file)). A banner in the app and a warning in the console say which parts are mocked and which are real, and every export says so too: downloads are named `mock-...` and start with the same notice. Results are saved to `data/mock-state.json` whenever anything is mocked, so they never mix with real ones. The Azure subscription you pick is kept in `data/settings.json` and shared by real and mock runs (except with mock Azure, whose subscription is fake). Add `demo_app/api` and `demo_app/worker` as source folders to see code changes; the mock diffs pass `git apply --check`. `MOCK_DELAY=0` removes the short pauses that make the loading states visible.
 
 The mock Azure data is rebuilt with `python scripts/make_mock_fixture.py`, from a real Discover saved in `data/state.json`. It scrubs IDs and e-mail addresses and refuses to write anything that still holds them.
 
