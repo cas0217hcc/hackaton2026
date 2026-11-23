@@ -106,7 +106,9 @@ Each outside service can be mocked on its own, so you can, for example, read you
 .\start.ps1 -MockAi -MockLeaseweb            # Windows PowerShell (start.bat takes the same switches)
 ```
 
-To make a choice the default, put the switches in a `.env` file (see [The .env file](#the-env-file)). A banner in the app says which parts are mocked and which are real. Results are saved to `data/mock-state.json` whenever anything is mocked, so they never mix with real ones. Add `demo_app/api` and `demo_app/worker` as source folders to see code changes; the mock diffs pass `git apply --check`. `MOCK_DELAY=0` removes the short pauses that make the loading states visible.
+To make a choice the default, put the switches in a `.env` file (see [The .env file](#the-env-file)). A banner in the app and a warning in the console say which parts are mocked and which are real, and every export says so too: downloads are named `mock-...` and start with the same notice. Results are saved to `data/mock-state.json` whenever anything is mocked, so they never mix with real ones. Add `demo_app/api` and `demo_app/worker` as source folders to see code changes; the mock diffs pass `git apply --check`. `MOCK_DELAY=0` removes the short pauses that make the loading states visible.
+
+The mock Azure data is rebuilt with `python scripts/make_mock_fixture.py`, from a real Discover saved in `data/state.json`. It scrubs IDs and e-mail addresses and refuses to write anything that still holds them.
 
 ### First run
 

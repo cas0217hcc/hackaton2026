@@ -6,6 +6,7 @@ from .claude_cli import ClaudeError, ask_json
 from .leaseweb_ops import load_operations
 from .diffcheck import folder_prefixes
 from .models import Assessment, CodeChange, Plan, Resource
+from .prompt import Prompt
 
 
 # Code and the manifests that say which SDKs it uses. Config files that tend to hold secrets
@@ -70,13 +71,13 @@ def select_sources(items: list[tuple[Assessment, Resource]], source: dict[str, s
     everything = {r.name: source for _, r in items}
     listing = "\n".join(f"- {name}: {text[:preview]!r}" for name, text in source.items())
     try:
-        ans = ask(
+        ans = ask(Prompt(
             "These Azure resources are being replaced on Leaseweb, and the application code that uses them may need changes.\n"
             + "\n".join(f"- {r.name} ({r.type}), becomes: {a.target}" for a, r in items) +
             "\nFor each resource, list the source files that use it or configure it (SDK calls, settings, "
             "infrastructure code, dependency manifests). Use only the file names below.\n" + listing +
-            '\nReply JSON: {"files": {"<resource name>": ["<file name>"]}}'
-        )
+            '\nReply JSON: {"files": {"<resource name>": ["<file name>"]}}',
+            "select_sources", items=items, files=list(source)))
     except ClaudeError:
         return everything
     picked = ans.get("files") if isinstance(ans, dict) else None
@@ -135,7 +136,7 @@ def build_plan(
 ) -> Plan:
     ops = ops if ops is not None else load_operations()
     code = "\n\n".join(f"### {name}\n{text}" for name, text in source.items()) or "(none supplied)"
-    ans = ask(
+    ans = ask(Prompt(
         f"Azure resource {resource.name} ({resource.type}) has no direct Leaseweb equivalent.\n"
         f"Proposed target: {assessment.target}. Reason: {assessment.rationale}\n"
         + (f"It can only be created after these resources exist on Leaseweb: "
@@ -148,8 +149,8 @@ def build_plan(
         f"with --- a/<file> and +++ b/<file> headers and @@ hunks, using the file name exactly as given after ###.\n{code}\n"
         'Keep "proposal" to 1-2 sentences and put the migration procedure in "steps", one short action per item. '
         'Reply JSON: {"proposal": str, "steps": [str], "lw_operations": [str], "code_changes": '
-        '[{"file": str, "summary": str, "diff": str}]}'
-    )
+        '[{"file": str, "summary": str, "diff": str}]}',
+        "plan", assessment=assessment, resource=resource, source=source, ops=sorted(ops)))
     warnings: list[str] = []
     valid = []
     for op in ans.get("lw_operations", []):

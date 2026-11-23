@@ -34,6 +34,7 @@ from .dryrun import (BASE_URL, DryRunExecutor, default_http, network_hint, Lease
 from .models import Assessment, CodeChange, DryRunCall, Plan, Resource
 from .leaseweb_ops import find_operations, load_launch_options, load_operation_docs, load_operations
 from .plan import FAILED_PREFIX, SELECT_ABOVE, build_plans, read_sources, select_sources
+from .prompt import Prompt
 
 HERE = Path(__file__).parent
 DEFAULT_RG = "hackaton-2026-rg"
@@ -110,9 +111,15 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups,
                pick_folder: Callable = default_pick_folder, git_runner: Callable | None = None,
                wait_timeout: float = 600, azure_status_fn: Callable = default_azure_status,
-               subscriptions_fn: Callable = default_list_subscriptions, mock=()) -> FastAPI:
-    """`mock`: the mocked parts ("azure", "ai", "leaseweb"; True means all). The page then says so, a mocked AI is the
-    only provider offered, and a mocked Leaseweb starts with a mock key. mock.py supplies the fakes themselves."""
+               subscriptions_fn: Callable = default_list_subscriptions, notice: str = "",
+               ai_providers: list[dict] | None = None, api_key: str | None = None) -> FastAPI:
+    """notice: a warning shown in a banner and at the top of every export (mock mode says what is fake).
+    ai_providers: the only AI providers to offer, instead of the installed ones; the first is selected.
+    api_key: a Leaseweb key to start with. Only accepted with a fake HTTP client (`http.fake`), so a made-up
+    key can never be sent to the real Leaseweb API. mock.py fills all of these for mock mode."""
+    fake_leaseweb = bool(getattr(http, "fake", False))
+    if api_key and not fake_leaseweb:
+        raise ValueError("api_key is only accepted together with a fake Leaseweb client")
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     extra_hosts = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
 
@@ -134,19 +141,16 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
     created: list[dict] = []  # what live calls created, newest last, so it can be torn down (memory only)
-    from .mock import MOCK_KEY, MOCK_PROVIDER, PARTS, describe
-    mocked = set(PARTS) if mock is True else set(mock or ())
-    mock_ai = "ai" in mocked
-    ai = AiSettings(provider="mock" if mock_ai else os.environ.get("AI_PROVIDER", "claude-cli"),
-                    model="" if mock_ai else os.environ.get("AI_MODEL", ""))
+    fixed_ai = [dict(p) for p in ai_providers] if ai_providers else None
+    ai = AiSettings(provider=fixed_ai[0]["id"] if fixed_ai else os.environ.get("AI_PROVIDER", "claude-cli"),
+                    model="" if fixed_ai else os.environ.get("AI_MODEL", ""))
 
     def providers() -> list[dict]:
-        if mock_ai:
-            return [dict(MOCK_PROVIDER)]
-        return available_providers(ai)
+        return [dict(p) for p in fixed_ai] if fixed_ai else available_providers(ai)
 
     # The provider and model are remembered next to the saved results; the API key never is.
-    ai_file = state_file.parent / "ai.json" if state_file is not None and not mock_ai else None
+    # A fixed provider list (mock mode) is not remembered, so it never replaces the real choice.
+    ai_file = state_file.parent / "ai.json" if state_file is not None and not fixed_ai else None
     if ai_file is not None and ai_file.exists():
         try:
             saved = json.loads(ai_file.read_text())
@@ -161,9 +165,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     key_check: dict = {"verified": None, "detail": ""}  # result of the last /api/key/test (True, False, None = unknown)
-    if "leaseweb" in mocked:  # a fake key for the fake API, so runs are "live" against it from the start
-        secrets["api_key"] = MOCK_KEY
-        key_check.update(verified=True, detail="Mock Leaseweb API: any key works, and nothing is sent to Leaseweb.")
+    if api_key:  # a key for the fake API (checked above), so runs are "live" against it from the start
+        secrets["api_key"] = api_key
+        key_check.update(verified=True, detail="Fake Leaseweb API: any key works, and nothing is sent to Leaseweb.")
     ops = load_operations()
     launch_options = load_launch_options()
 
@@ -187,12 +191,12 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def index(request: Request):
         # Version static URLs by file mtime so browsers never reuse stale JS/CSS.
         v = int(max(f.stat().st_mtime for f in (HERE / "static").iterdir()))
-        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v, "mock": sorted(mocked),
-                                                                   "mock_text": describe(mocked) if mocked else ""})
+        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v, "notice": notice,
+                                                                   "fake_leaseweb": fake_leaseweb})
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "mock": sorted(mocked), "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
+        return {**_dump(state), "notice": notice, "fake_leaseweb": fake_leaseweb, "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
                 "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/key")
@@ -465,7 +469,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def api_ai_test():
         """Send a tiny request through the selected provider so a bad setup shows up before a long run."""
         try:
-            answer = ask_ai('Reply with this JSON object and nothing else: {"ok": true}')
+            answer = ask_ai(Prompt('Reply with this JSON object and nothing else: {"ok": true}', "test"))
         except ClaudeError as e:
             return error(str(e))
         if answer.get("ok") is not True:
@@ -575,7 +579,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     @app.get("/export", response_class=PlainTextResponse)
     def export():
-        lines = ["# Azure to Leaseweb migration plan", "", "## Assessment", ""]
+        lines = ["# Azure to Leaseweb migration plan", ""] + ([f"> **{notice}**", ""] if notice else []) + ["## Assessment", ""]
         for a in state["assessments"]:
             needs = f" Needs first: {', '.join(d['name'] for d in a.dependencies)}." if a.dependencies else ""
             lines.append(f"- **{a.resource_name}**: {a.route} -> {a.target}. {a.rationale}{needs}")
@@ -599,23 +603,33 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                 lines += [f"- {n}" for n in d["notes"]] + [""]
         return "\n".join(lines) + "\n"
 
+    def download_headers(filename: str) -> dict:
+        """Downloads made in mock mode are named mock-..., so they are never taken for real ones."""
+        name = f"mock-{filename}" if notice else filename
+        headers = {"Content-Disposition": f'attachment; filename="{name}"'}
+        return {**headers, "X-Mock-Notice": notice} if notice else headers
+
     def export_calls() -> list[DryRunCall]:
         return state["calls"] or (current_calls() if state["assessments"] else [])
 
     @app.get("/export/calls.json")
     def export_calls_json():
         return Response(json.dumps([asdict(c) for c in export_calls()], indent=2), media_type="application/json",
-                        headers={"Content-Disposition": 'attachment; filename="leaseweb-calls.json"'})
+                        headers=download_headers("leaseweb-calls.json"))
 
     @app.get("/export/calls.sh")
     def export_calls_sh():
-        return Response(curl_script(export_calls()), media_type="text/x-shellscript",
-                        headers={"Content-Disposition": 'attachment; filename="leaseweb-calls.sh"'})
+        script = curl_script(export_calls())
+        if notice:  # right under the shebang line
+            first, _, rest = script.partition("\n")
+            script = f"{first}\n# {notice}\n{rest}"
+        return Response(script, media_type="text/x-shellscript", headers=download_headers("leaseweb-calls.sh"))
 
     @app.get("/export/patch")
     def export_patch():
-        return Response(patch_text(state["plans"]), media_type="text/x-diff",
-                        headers={"Content-Disposition": 'attachment; filename="migration-code-changes.patch"'})
+        text = patch_text(state["plans"])  # git apply skips text before the first diff, so a note can lead
+        return Response((f"# {notice}\n\n" if notice else "") + text, media_type="text/x-diff",
+                        headers=download_headers("migration-code-changes.patch"))
 
     return app
 
@@ -627,9 +641,19 @@ def _app_from_env(env_file: Path = ENV_FILE) -> FastAPI:
     from .mock import describe, mock_overrides, mock_parts
     parts = mock_parts()
     if parts:
-        print(describe(parts), flush=True)
+        print("WARNING: " + describe(parts), flush=True)
         return create_app(**mock_overrides(parts))
     return create_app()
 
 
-app = _app_from_env()
+_built: dict = {}
+
+
+def __getattr__(name: str):
+    """`app` is built when it is first asked for, as uvicorn does with migration_assistant.app:app.
+    Importing this module (as the tests do) therefore never reads .env or changes the environment."""
+    if name == "app":
+        if "app" not in _built:
+            _built["app"] = _app_from_env()
+        return _built["app"]
+    raise AttributeError(name)

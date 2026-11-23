@@ -8,6 +8,8 @@ Two sources, merged at the Assess stage:
 Included resources (NIC, disk, public IP) are folded into their owner, both as source and target.
 """
 import json
+
+from .prompt import Prompt
 import re
 from typing import Any, Callable
 
@@ -64,15 +66,15 @@ def ai_links(resources: list[Resource], assessments: list[Assessment], ask: Call
     for r in resources:
         props = json.dumps(r.properties, default=str)[:MAX_PROPS]
         lines.append(f"- {r.name} ({r.type}, route {routes.get(r.name, '?')}): {props}")
-    ans = ask(
+    ans = ask(Prompt(
         "These Azure resources are being migrated to Leaseweb. On Leaseweb they are created one by one, "
         "so a resource can only be created after the resources it needs exist (a VM needs its network, "
         "an app needs the database, vault, storage or queue it connects to).\n"
         "Using the configurations below (ids, app settings, endpoints, names), list every dependency "
         "between these resources. Only use the resource names given. Do not list a resource as depending "
         "on itself, and never make a cycle.\n" + "\n".join(lines) + "\n"
-        'Reply JSON: {"dependencies": [{"resource": str, "depends_on": str, "reason": str}]}'
-    )
+        'Reply JSON: {"dependencies": [{"resource": str, "depends_on": str, "reason": str}]}',
+        "dependencies", resources=resources, routes=routes))
     out = []
     for d in ans.get("dependencies") or [] if isinstance(ans, dict) else []:
         if isinstance(d, dict) and isinstance(d.get("resource"), str) and isinstance(d.get("depends_on"), str):

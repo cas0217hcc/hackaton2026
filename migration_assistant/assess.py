@@ -6,6 +6,7 @@ from typing import Callable
 from .claude_cli import ClaudeError, ask_json
 from .leaseweb_ops import load_operations
 from .models import Assessment, Resource
+from .prompt import Prompt
 
 
 @dataclass
@@ -124,11 +125,11 @@ def assess(resources: list[Resource], ask: Callable = ask_json, ops: dict | None
     ops = ops if ops is not None else load_operations()
 
     def ask_type(r: Resource) -> Rule:
-        ans = ask(
+        ans = ask(Prompt(
             f"Azure resource type {r.type} (name {r.name}). Can it migrate directly to Leaseweb "
             "(Public Cloud, Object Storage, private networks)? Reply JSON: "
-            '{"route": "direct"|"rebuild", "target": str, "rationale": str, "lw_operations": [str]}'
-        )
+            '{"route": "direct"|"rebuild", "target": str, "rationale": str, "lw_operations": [str]}',
+            "assess_type", resource=r))
         return _rule_from_answer(ans, ops)
 
     # One AI question per unknown type, asked in parallel (the first resource of each type is the example).
