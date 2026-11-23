@@ -575,3 +575,7 @@ select {
 }
 select.value-input { padding-right: 28px !important; background-position: right 9px center; background-size: 10px 7px; line-height: 1.45; }
 select:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* Mock mode: a strip under the header so sample data is never mistaken for a real run */
+.mock-banner { padding: 8px 24px 6px; background: var(--warn-bg); color: var(--warn); font-size: 13.5px; border-bottom: 1px solid #e9d48f; }
+@media (max-width: 720px) { .mock-banner { padding: 8px 16px 6px; } }

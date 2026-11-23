@@ -27,6 +27,7 @@ from .llm import DEFAULT_API_MODEL, AiSettings, available_providers, list_models
 from .folder_picker import FolderPickerError, pick_folder as default_pick_folder
 from .costs import azure_vm_prices, leaseweb_prices
 from .datamove import data_steps
+from .envfile import ENV_FILE, load_env
 from .diffcheck import check_plans, patch_text
 from .dryrun import (BASE_URL, DryRunExecutor, default_http, network_hint, LeasewebExecutor, annotate_chain, build_calls, curl_script, path_matches,
                      run_calls, teardown_calls)
@@ -109,7 +110,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
                models_fn: Callable = default_list_models, groups_fn: Callable = list_resource_groups,
                pick_folder: Callable = default_pick_folder, git_runner: Callable | None = None,
                wait_timeout: float = 600, azure_status_fn: Callable = default_azure_status,
-               subscriptions_fn: Callable = default_list_subscriptions) -> FastAPI:
+               subscriptions_fn: Callable = default_list_subscriptions, mock=()) -> FastAPI:
+    """`mock`: the mocked parts ("azure", "ai", "leaseweb"; True means all). The page then says so, a mocked AI is the
+    only provider offered, and a mocked Leaseweb starts with a mock key. mock.py supplies the fakes themselves."""
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
     extra_hosts = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
 
@@ -131,13 +134,23 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     progress_lock = threading.Lock()
     chain: dict[str, str] = {}  # ids returned by earlier live calls, e.g. instanceId (memory only)
     created: list[dict] = []  # what live calls created, newest last, so it can be torn down (memory only)
-    ai = AiSettings(provider=os.environ.get("AI_PROVIDER", "claude-cli"), model=os.environ.get("AI_MODEL", ""))
+    from .mock import MOCK_KEY, MOCK_PROVIDER, PARTS, describe
+    mocked = set(PARTS) if mock is True else set(mock or ())
+    mock_ai = "ai" in mocked
+    ai = AiSettings(provider="mock" if mock_ai else os.environ.get("AI_PROVIDER", "claude-cli"),
+                    model="" if mock_ai else os.environ.get("AI_MODEL", ""))
+
+    def providers() -> list[dict]:
+        if mock_ai:
+            return [dict(MOCK_PROVIDER)]
+        return available_providers(ai)
+
     # The provider and model are remembered next to the saved results; the API key never is.
-    ai_file = state_file.parent / "ai.json" if state_file is not None else None
+    ai_file = state_file.parent / "ai.json" if state_file is not None and not mock_ai else None
     if ai_file is not None and ai_file.exists():
         try:
             saved = json.loads(ai_file.read_text())
-            if saved["provider"] in {p["id"] for p in available_providers(ai)} and isinstance(saved.get("model", ""), str):
+            if saved["provider"] in {p["id"] for p in providers()} and isinstance(saved.get("model", ""), str):
                 ai.provider, ai.model = saved["provider"], saved.get("model", "")
         except (ValueError, KeyError, TypeError, OSError):
             pass  # a damaged file just means the default
@@ -148,6 +161,9 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     secrets: dict = {"api_key": None}  # memory only: never saved, never returned
     key_check: dict = {"verified": None, "detail": ""}  # result of the last /api/key/test (True, False, None = unknown)
+    if "leaseweb" in mocked:  # a fake key for the fake API, so runs are "live" against it from the start
+        secrets["api_key"] = MOCK_KEY
+        key_check.update(verified=True, detail="Mock Leaseweb API: any key works, and nothing is sent to Leaseweb.")
     ops = load_operations()
     launch_options = load_launch_options()
 
@@ -171,11 +187,12 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def index(request: Request):
         # Version static URLs by file mtime so browsers never reuse stale JS/CSS.
         v = int(max(f.stat().st_mtime for f in (HERE / "static").iterdir()))
-        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v})
+        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v, "mock": sorted(mocked),
+                                                                   "mock_text": describe(mocked) if mocked else ""})
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
+        return {**_dump(state), "mock": sorted(mocked), "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
                 "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/key")
@@ -399,7 +416,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
         an injected `ask` or `make_ask` (as in tests) brings its own backends."""
         if ask is not None or make_ask is not default_make_ask:
             return ""
-        chosen = next((p for p in available_providers(ai) if p["id"] == ai.provider), None)
+        chosen = next((p for p in providers() if p["id"] == ai.provider), None)
         if chosen is None or not chosen["available"]:
             return f"The AI provider is not ready: {chosen['detail'] if chosen else ai.provider}. Choose a working one in the AI settings."
         if ai.provider == "anthropic-api" and not ai.api_key and not any(
@@ -410,7 +427,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def ai_state() -> dict:
         effective = ai.model or (DEFAULT_API_MODEL if ai.provider == "anthropic-api" else "")
         return {"provider": ai.provider, "model": ai.model, "effective_model": effective, "api_key_set": bool(ai.api_key),
-                "providers": available_providers(ai), "problem": ai_problem()}
+                "providers": providers(), "problem": ai_problem()}
 
     @app.get("/api/ai")
     def api_ai():
@@ -419,7 +436,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     @app.post("/api/ai")
     def api_ai_set(provider: str = Form(...), model: str = Form(""), api_key: str = Form("")):
         provider, model = provider.strip(), model.strip()
-        if provider not in {p["id"] for p in available_providers(ai)}:
+        if provider not in {p["id"] for p in providers()}:
             return error(f"Unknown AI provider '{provider}'.", 400)
         if provider == "opencode" and model and not re.fullmatch(r"[A-Za-z0-9][\w.\-]*/[\w.\-:/]+", model):
             return error("opencode model must look like provider/model, for example anthropic/claude-sonnet-5-5.", 400)
@@ -440,7 +457,7 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
 
     @app.get("/api/ai/models")
     def api_ai_models(provider: str):
-        if provider not in {p["id"] for p in available_providers(ai)}:
+        if provider not in {p["id"] for p in providers()}:
             return error(f"Unknown AI provider '{provider}'.", 400)
         return models_fn(provider, ai)
 
@@ -603,4 +620,16 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     return app
 
 
-app = create_app()
+def _app_from_env(env_file: Path = ENV_FILE) -> FastAPI:
+    """Settings come from the environment, then from .env in the repo root (see .env.example).
+    MOCK_AZURE, MOCK_AI and MOCK_LEASEWEB mock one part each, MOCK_MODE all three (see mock.py)."""
+    load_env(env_file)
+    from .mock import describe, mock_overrides, mock_parts
+    parts = mock_parts()
+    if parts:
+        print(describe(parts), flush=True)
+        return create_app(**mock_overrides(parts))
+    return create_app()
+
+
+app = _app_from_env()

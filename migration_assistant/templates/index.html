@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css?v={{ v }}">
 </head>
-<body>
+<body{% if "leaseweb" in mock %} data-mock-leaseweb="1"{% endif %}>
 <header class="top">
   <div class="brand">
     <span class="brand-tab">
@@ -93,6 +93,9 @@
   <span><b>LIVE mode.</b> Calls you run in Automatic migration are sent to Leaseweb and can create billable resources.</span>
   <button class="btn ghost" id="live-off" type="button">Remove key and return to dry run</button>
 </div>
+{% if mock %}
+<div class="mock-banner" id="mock-banner" role="note">{{ mock_text }}</div>
+{% endif %}
 <div id="top-confirm"></div>
 
 <nav class="steps" aria-label="Stages">

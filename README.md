@@ -90,6 +90,24 @@ Open <http://127.0.0.1:8000>. The server binds to localhost only. It is a single
 
 Because it can send live Leaseweb calls, the app refuses changing requests that come from another site's page (it checks `Origin`), and it only answers to `localhost` or an IP address in the `Host` header, which blocks DNS-rebinding pages. To open it by another name, list that name in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=devbox.lan`.
 
+### Mock mode: try the app without Azure, AI tokens or a Leaseweb key
+
+Each outside service can be mocked on its own, so you can, for example, read your real Azure resource group but use a canned AI and a fake Leaseweb API:
+
+| Switch | Start script | What it does |
+|---|---|---|
+| `MOCK_AZURE=1` | `--mock-azure` / `-MockAzure` | Discover returns a saved, scrubbed copy of `hackaton-2026-rg` (33 resources, `migration_assistant/mock_data/`). `az` is not used. |
+| `MOCK_AI=1` | `--mock-ai` / `-MockAi` | Assess and Manual migration get canned answers, so no tokens are spent. The answers follow the real configuration: dependencies come from the endpoints and names in each resource's settings. |
+| `MOCK_LEASEWEB=1` | `--mock-leaseweb` / `-MockLeaseweb` | The app starts with a mock key, and live calls and teardown go to a fake Leaseweb API. Nothing is sent to Leaseweb. Remove the key to go back to dry run. |
+| `MOCK_MODE=1` | `--mock` / `-Mock` | All three. Nothing leaves your machine. |
+
+```bash
+./start.sh --mock-ai --mock-leaseweb        # Linux and macOS: real Azure, mocked AI and Leaseweb
+.\start.ps1 -MockAi -MockLeaseweb            # Windows PowerShell (start.bat takes the same switches)
+```
+
+To make a choice the default, put the switches in a `.env` file (see [The .env file](#the-env-file)). A banner in the app says which parts are mocked and which are real. Results are saved to `data/mock-state.json` whenever anything is mocked, so they never mix with real ones. Add `demo_app/api` and `demo_app/worker` as source folders to see code changes; the mock diffs pass `git apply --check`. `MOCK_DELAY=0` removes the short pauses that make the loading states visible.
+
 ### First run
 
 The header shows three connections, each with a status dot: **Azure**, **AI** and **Leaseweb**. Click one to see and change its settings. **Discover** also lists them under *Before you start*, says what each one is needed for, and links to the fix when one is not ready. The app will not run a step whose prerequisite is missing:
@@ -108,6 +126,10 @@ The header shows three connections, each with a status dot: **Azure**, **AI** an
 `sample_app/` is a small Python app that uses Key Vault and Blob Storage. Use it as a source folder to see code changes in a plan.
 
 ## Configuration
+
+### The .env file
+
+Settings can be kept in a `.env` file in the repo root instead of being set before every start. Copy `.env.example` to `.env` and uncomment what you need: `MOCK_MODE`, `MOCK_AZURE`, `MOCK_AI`, `MOCK_LEASEWEB`, `MOCK_DELAY`, `AI_PROVIDER`, `AI_MODEL`, `ANTHROPIC_API_KEY` and `ALLOWED_HOSTS`. The app reads it when it starts. A variable already set in the environment wins over the file, so `MOCK_AI=0` on the command line still turns that mock off. `.env` is git-ignored. Host and port are options of the start scripts and are not read from it.
 
 ### AI providers
 

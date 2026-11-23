@@ -9,18 +9,33 @@
   Address to listen on (default 127.0.0.1, or the HOST environment variable).
 .PARAMETER Reload
   Restart the server when the code changes (for development).
+.PARAMETER Mock
+  Mock Azure, the AI and Leaseweb (same as MOCK_MODE=1).
+.PARAMETER MockAzure
+  Discover returns a saved copy of hackaton-2026-rg, without az (same as MOCK_AZURE=1).
+.PARAMETER MockAi
+  Canned AI answers, no tokens spent (same as MOCK_AI=1).
+.PARAMETER MockLeaseweb
+  A mock key and a fake Leaseweb API (same as MOCK_LEASEWEB=1).
+.EXAMPLE
+  .\start.ps1 -MockAi -MockLeaseweb
 .EXAMPLE
   .\start.ps1 -Port 9000
 .NOTES
   If scripts are blocked on your machine, run start.bat instead, or:
   powershell -ExecutionPolicy Bypass -File .\start.ps1
-  AI_PROVIDER, AI_MODEL and ANTHROPIC_API_KEY are passed through to the app.
+  AI_PROVIDER, AI_MODEL and ANTHROPIC_API_KEY are passed through to the app. The app also reads
+  them, and the MOCK_* switches, from a .env file in this folder (copy .env.example).
 #>
 [CmdletBinding()]
 param(
     [int]$Port = 8000,
     [string]$BindHost = '127.0.0.1',
-    [switch]$Reload
+    [switch]$Reload,
+    [switch]$Mock,
+    [switch]$MockAzure,
+    [switch]$MockAi,
+    [switch]$MockLeaseweb
 )
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -78,6 +93,10 @@ if ($BindHost -notin @('127.0.0.1', 'localhost', '::1')) {
     Write-Warning "Listening on $BindHost. The app has no login, so only do this on a network you trust. Open it by IP, or list its host name in ALLOWED_HOSTS."
 }
 
+if ($Mock) { $env:MOCK_MODE = '1' }
+if ($MockAzure) { $env:MOCK_AZURE = '1' }
+if ($MockAi) { $env:MOCK_AI = '1' }
+if ($MockLeaseweb) { $env:MOCK_LEASEWEB = '1' }
 Write-Host "Starting on http://${BindHost}:$Port  (Ctrl+C to stop)"
 $serverArgs = @('-m', 'uvicorn', 'migration_assistant.app:app', '--host', $BindHost, '--port', "$Port")
 if ($Reload) { $serverArgs += '--reload' }

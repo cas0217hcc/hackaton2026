@@ -10,14 +10,19 @@ RELOAD=()
 
 usage() {
   cat <<'USAGE'
-Usage: ./start.sh [--host HOST] [--port PORT] [--reload]
+Usage: ./start.sh [--host HOST] [--port PORT] [--reload] [--mock | --mock-azure --mock-ai --mock-leaseweb]
 
   --host HOST   address to listen on (default 127.0.0.1, or $HOST)
   --port PORT   port to listen on (default 8000, or $PORT)
   --reload      restart the server when the code changes (for development)
+  --mock           mock Azure, the AI and Leaseweb (or MOCK_MODE=1)
+  --mock-azure     Discover returns a saved copy of hackaton-2026-rg, without az (or MOCK_AZURE=1)
+  --mock-ai        canned AI answers, no tokens spent (or MOCK_AI=1)
+  --mock-leaseweb  a mock key and a fake Leaseweb API (or MOCK_LEASEWEB=1)
   -h, --help    show this help
 
-AI_PROVIDER, AI_MODEL and ANTHROPIC_API_KEY are passed through to the app.
+AI_PROVIDER, AI_MODEL and ANTHROPIC_API_KEY are passed through to the app. The app also reads
+them, and the MOCK_* switches, from a .env file in this folder (copy .env.example).
 ALLOWED_HOSTS (comma-separated host names) lets the app be opened by a name other than
 localhost or an IP address, for example ALLOWED_HOSTS=devbox.lan.
 USAGE
@@ -28,6 +33,10 @@ while [ $# -gt 0 ]; do
     --host) HOST="${2:?--host needs a value}"; shift 2 ;;
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
     --reload) RELOAD=(--reload); shift ;;
+    --mock) export MOCK_MODE=1; shift ;;
+    --mock-azure) export MOCK_AZURE=1; shift ;;
+    --mock-ai) export MOCK_AI=1; shift ;;
+    --mock-leaseweb) export MOCK_LEASEWEB=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac

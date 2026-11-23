@@ -598,7 +598,9 @@ let migrateRows = [];
 let chainIds = {};  // ids returned by earlier live calls, e.g. instanceId
 
 function refreshMode() {
-  $("mode-text").textContent = live ? "LIVE: calls are sent to Leaseweb" : "Dry run: nothing is sent to Leaseweb";
+  const fake = document.body.dataset.mockLeaseweb === "1";  // mock mode: "live" calls go to a fake Leaseweb API
+  $("mode-text").textContent = live ? (fake ? "MOCK LIVE: calls go to a fake Leaseweb API" : "LIVE: calls are sent to Leaseweb")
+    : "Dry run: nothing is sent to Leaseweb";
   $("mode").classList.toggle("live", live);
   $("liveband").hidden = !live;
   renderKeyConn();

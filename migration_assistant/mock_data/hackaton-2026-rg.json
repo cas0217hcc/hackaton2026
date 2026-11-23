@@ -1,0 +1,1371 @@
+{
+ "resource_group": "hackaton-2026-rg",
+ "location": "westeurope",
+ "resources": [
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack",
+   "name": "vnet-hack",
+   "type": "Microsoft.Network/virtualNetworks",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T12:02:28.643295+00:00",
+    "createdTime": "2026-11-12T21:10:13.914496+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "addressSpace": {
+      "addressPrefixes": [
+       "10.20.0.0/16"
+      ]
+     },
+     "subnets": [
+      {
+       "name": "snet-hack2026-r8l54-cae",
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-cae",
+       "properties": {
+        "addressPrefix": "10.20.2.0/24",
+        "networkSecurityGroup": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkSecurityGroups/nsg-hack2026-r8l54-apps"
+        },
+        "delegations": [
+         {
+          "name": "containerapps",
+          "properties": {
+           "serviceName": "Microsoft.App/environments"
+          }
+         }
+        ]
+       }
+      },
+      {
+       "name": "snet-hack2026-r8l54-func",
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-func",
+       "properties": {
+        "addressPrefix": "10.20.3.0/24",
+        "networkSecurityGroup": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkSecurityGroups/nsg-hack2026-r8l54-apps"
+        },
+        "delegations": [
+         {
+          "name": "flexconsumption",
+          "properties": {
+           "serviceName": "Microsoft.App/environments"
+          }
+         }
+        ]
+       }
+      },
+      {
+       "name": "snet-hack2026-r8l54-pe",
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe",
+       "properties": {
+        "addressPrefix": "10.20.4.0/24",
+        "networkSecurityGroup": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkSecurityGroups/nsg-hack2026-r8l54-apps"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": null
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hack2026-r8l54-api",
+   "name": "id-hack2026-r8l54-api",
+   "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:02.938762+00:00",
+    "createdTime": "2026-11-20T10:51:02.542616+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "clientId": "3767cb49-71b6-50bc-91b4-2f600a2dd011",
+     "tenantId": "07e59fcc-654e-5b48-9928-7032b9b42c23"
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "identity",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hack2026-r8l54-worker",
+   "name": "id-hack2026-r8l54-worker",
+   "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:03.334446+00:00",
+    "createdTime": "2026-11-20T10:51:02.715779+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "clientId": "4a486640-874d-59a2-9270-fc15d5de6ac2",
+     "tenantId": "07e59fcc-654e-5b48-9928-7032b9b42c23"
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "identity",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Web/serverFarms/asp-hack2026-r8l54-func",
+   "name": "asp-hack2026-r8l54-func",
+   "type": "Microsoft.Web/serverFarms",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:03.971066+00:00",
+    "createdTime": "2026-11-20T10:51:02.942729+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": "functionapp",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "reserved": true
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": {
+     "name": "FC1",
+     "tier": "FlexConsumption"
+    },
+    "tags": {
+     "component": "worker",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.DocumentDB/databaseAccounts/cosmos-hack2026-r8l54",
+   "name": "cosmos-hack2026-r8l54",
+   "type": "Microsoft.DocumentDB/databaseAccounts",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:02:28.543585+00:00",
+    "createdTime": "2026-11-20T10:51:03.173428+00:00",
+    "extendedLocation": null,
+    "identity": {
+     "principalId": null,
+     "tenantId": null,
+     "type": "None",
+     "userAssignedIdentities": null
+    },
+    "kind": "GlobalDocumentDB",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "documentEndpoint": "https://cosmos-hack2026-r8l54.documents.azure.com:443/",
+     "disableLocalAuth": true,
+     "databaseAccountOfferType": "Standard",
+     "consistencyPolicy": {
+      "defaultConsistencyLevel": "Session"
+     },
+     "capabilities": [
+      {
+       "name": "EnableServerless"
+      }
+     ],
+     "locations": [
+      {
+       "locationName": "West Europe",
+       "failoverPriority": 0
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "database",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.KeyVault/vaults/kv-hack2026-r8l54",
+   "name": "kv-hack2026-r8l54",
+   "type": "Microsoft.KeyVault/vaults",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:03.365936+00:00",
+    "createdTime": "2026-11-20T10:51:03.109844+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "vaultUri": "https://kv-hack2026-r8l54.vault.azure.net/",
+     "enableRbacAuthorization": true,
+     "enableSoftDelete": true,
+     "softDeleteRetentionInDays": 7,
+     "sku": {
+      "family": "A",
+      "name": "standard"
+     }
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "secrets",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.OperationalInsights/workspaces/log-hack2026-r8l54",
+   "name": "log-hack2026-r8l54",
+   "type": "Microsoft.OperationalInsights/workspaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:47.068684+00:00",
+    "createdTime": "2026-11-20T10:51:04.503581+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "retentionInDays": 30,
+     "sku": {
+      "name": "PerGB2018"
+     }
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "monitoring",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Insights/components/appi-hack2026-r8l54",
+   "name": "appi-hack2026-r8l54",
+   "type": "Microsoft.Insights/components",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:01:50.137324+00:00",
+    "createdTime": "2026-11-20T10:51:49.553235+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": "web",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "WorkspaceResourceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.OperationalInsights/workspaces/log-hack2026-r8l54",
+     "Application_Type": "web",
+     "ConnectionString": "InstrumentationKey=<redacted>;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/"
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "monitoring",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.App/managedEnvironments/cae-hack2026-r8l54",
+   "name": "cae-hack2026-r8l54",
+   "type": "Microsoft.App/managedEnvironments",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T12:23:39.569922+00:00",
+    "createdTime": "2026-11-20T11:50:06.874183+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "vnetConfiguration": {
+      "infrastructureSubnetId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-cae",
+      "internal": false
+     },
+     "workloadProfiles": [
+      {
+       "name": "Consumption",
+       "workloadProfileType": "Consumption"
+      }
+     ],
+     "appLogsConfiguration": {
+      "destination": "log-analytics",
+      "logAnalyticsConfiguration": {
+       "customerId": "log-hack2026-r8l54"
+      }
+     }
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "container-platform",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/microsoft.insights/actiongroups/Application Insights Smart Detection",
+   "name": "Application Insights Smart Detection",
+   "type": "microsoft.insights/actiongroups",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:11:58.496837+00:00",
+    "createdTime": "2026-11-20T11:01:52.230010+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "groupShortName": "SmartDetect",
+     "enabled": true,
+     "armRoleReceivers": [
+      {
+       "name": "Monitoring Contributor",
+       "useCommonAlertSchema": true
+      },
+      {
+       "name": "Monitoring Reader",
+       "useCommonAlertSchema": true
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": null
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.queue.core.windows.net",
+   "name": "privatelink.queue.core.windows.net",
+   "type": "Microsoft.Network/privateDnsZones",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:36:42.817460+00:00",
+    "createdTime": "2026-11-20T11:26:10.030020+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "numberOfRecordSets": 3
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net",
+   "name": "privatelink.table.core.windows.net",
+   "type": "Microsoft.Network/privateDnsZones",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:36:42.940870+00:00",
+    "createdTime": "2026-11-20T11:26:10.116930+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "numberOfRecordSets": 3
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54func",
+   "name": "sthack2026r8l54func",
+   "type": "Microsoft.Storage/storageAccounts",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:36:31.296997+00:00",
+    "createdTime": "2026-11-20T11:26:10.392015+00:00",
+    "extendedLocation": null,
+    "identity": {
+     "principalId": null,
+     "tenantId": null,
+     "type": "None",
+     "userAssignedIdentities": null
+    },
+    "kind": "StorageV2",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "primaryEndpoints": {
+      "blob": "https://sthack2026r8l54func.blob.core.windows.net/",
+      "queue": "https://sthack2026r8l54func.queue.core.windows.net/",
+      "table": "https://sthack2026r8l54func.table.core.windows.net/",
+      "file": "https://sthack2026r8l54func.file.core.windows.net/"
+     },
+     "publicNetworkAccess": "Disabled",
+     "allowSharedKeyAccess": false,
+     "minimumTlsVersion": "TLS1_2",
+     "supportsHttpsTrafficOnly": true
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": {
+     "name": "Standard_LRS",
+     "tier": "Standard"
+    },
+    "tags": {
+     "component": "function-runtime",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    },
+    "services": {
+     "containers": [
+      "azure-webjobs-hosts",
+      "azure-webjobs-secrets",
+      "deployments"
+     ],
+     "queues": [],
+     "tables": [],
+     "shares": []
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net",
+   "name": "privatelink.blob.core.windows.net",
+   "type": "Microsoft.Network/privateDnsZones",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:36:43.003784+00:00",
+    "createdTime": "2026-11-20T11:26:10.694436+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "numberOfRecordSets": 3
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54app",
+   "name": "sthack2026r8l54app",
+   "type": "Microsoft.Storage/storageAccounts",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:36:55.678034+00:00",
+    "createdTime": "2026-11-20T11:26:10.930562+00:00",
+    "extendedLocation": null,
+    "identity": {
+     "principalId": null,
+     "tenantId": null,
+     "type": "None",
+     "userAssignedIdentities": null
+    },
+    "kind": "StorageV2",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "primaryEndpoints": {
+      "blob": "https://sthack2026r8l54app.blob.core.windows.net/",
+      "queue": "https://sthack2026r8l54app.queue.core.windows.net/",
+      "table": "https://sthack2026r8l54app.table.core.windows.net/",
+      "file": "https://sthack2026r8l54app.file.core.windows.net/"
+     },
+     "publicNetworkAccess": "Disabled",
+     "allowSharedKeyAccess": false,
+     "minimumTlsVersion": "TLS1_2",
+     "supportsHttpsTrafficOnly": true
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": {
+     "name": "Standard_LRS",
+     "tier": "Standard"
+    },
+    "tags": {
+     "component": "app-storage",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    },
+    "services": {
+     "containers": [
+      "product-images"
+     ],
+     "queues": [
+      "products",
+      "products-poison"
+     ],
+     "tables": [],
+     "shares": []
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net/virtualNetworkLinks/link-vnet-hack",
+   "name": "privatelink.blob.core.windows.net/link-vnet-hack",
+   "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:37:47.048407+00:00",
+    "createdTime": "2026-11-20T11:26:44.403277+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "virtualNetwork": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack"
+     },
+     "registrationEnabled": false
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.queue.core.windows.net/virtualNetworkLinks/link-vnet-hack",
+   "name": "privatelink.queue.core.windows.net/link-vnet-hack",
+   "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:37:16.927217+00:00",
+    "createdTime": "2026-11-20T11:26:44.339151+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "virtualNetwork": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack"
+     },
+     "registrationEnabled": false
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateDnsZones/privatelink.table.core.windows.net/virtualNetworkLinks/link-vnet-hack",
+   "name": "privatelink.table.core.windows.net/link-vnet-hack",
+   "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+   "location": "global",
+   "properties": {
+    "changedTime": "2026-11-20T11:37:48.067174+00:00",
+    "createdTime": "2026-11-20T11:26:44.476295+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "virtualNetwork": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack"
+     },
+     "registrationEnabled": false
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-queue",
+   "name": "pe-hack2026-r8l54-func-queue",
+   "type": "Microsoft.Network/privateEndpoints",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:28:07.899825+00:00",
+    "createdTime": "2026-11-20T11:27:53.987516+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "subnet": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+     },
+     "privateLinkServiceConnections": [
+      {
+       "name": "psc-hack2026-r8l54-func-queue",
+       "properties": {
+        "privateLinkServiceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54func",
+        "groupIds": [
+         "queue"
+        ]
+       }
+      }
+     ],
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-queue.nic.8ba93d8e-383c-5fbe-8183-862783a1d8da"
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-table",
+   "name": "pe-hack2026-r8l54-func-table",
+   "type": "Microsoft.Network/privateEndpoints",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:28:10.543356+00:00",
+    "createdTime": "2026-11-20T11:27:57.379195+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "subnet": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+     },
+     "privateLinkServiceConnections": [
+      {
+       "name": "psc-hack2026-r8l54-func-table",
+       "properties": {
+        "privateLinkServiceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54func",
+        "groupIds": [
+         "table"
+        ]
+       }
+      }
+     ],
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-table.nic.e0d1438d-4c87-51b0-95f6-1edfb4bb6130"
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-blob",
+   "name": "pe-hack2026-r8l54-func-blob",
+   "type": "Microsoft.Network/privateEndpoints",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:28:10.716584+00:00",
+    "createdTime": "2026-11-20T11:27:57.474219+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "subnet": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+     },
+     "privateLinkServiceConnections": [
+      {
+       "name": "psc-hack2026-r8l54-func-blob",
+       "properties": {
+        "privateLinkServiceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54func",
+        "groupIds": [
+         "blob"
+        ]
+       }
+      }
+     ],
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-blob.nic.38514c07-f023-5f9e-9907-a5a676263b8d"
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-blob",
+   "name": "pe-hack2026-r8l54-app-blob",
+   "type": "Microsoft.Network/privateEndpoints",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:28:12.482262+00:00",
+    "createdTime": "2026-11-20T11:27:57.686907+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "subnet": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+     },
+     "privateLinkServiceConnections": [
+      {
+       "name": "psc-hack2026-r8l54-app-blob",
+       "properties": {
+        "privateLinkServiceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54app",
+        "groupIds": [
+         "blob"
+        ]
+       }
+      }
+     ],
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-app-blob.nic.fc1975ef-21e8-5b43-84c9-b7898056122c"
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-queue",
+   "name": "pe-hack2026-r8l54-app-queue",
+   "type": "Microsoft.Network/privateEndpoints",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:28:17.620486+00:00",
+    "createdTime": "2026-11-20T11:28:03.839600+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "subnet": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+     },
+     "privateLinkServiceConnections": [
+      {
+       "name": "psc-hack2026-r8l54-app-queue",
+       "properties": {
+        "privateLinkServiceId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54app",
+        "groupIds": [
+         "queue"
+        ]
+       }
+      }
+     ],
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-app-queue.nic.de4670fe-b66c-5eab-babe-7d0af812bce3"
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-queue.nic.8ba93d8e-383c-5fbe-8183-862783a1d8da",
+   "name": "pe-hack2026-r8l54-func-queue.nic.8ba93d8e-383c-5fbe-8183-862783a1d8da",
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:38:06.789621+00:00",
+    "createdTime": "2026-11-20T11:28:06.626935+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-queue",
+    "plan": null,
+    "properties": {
+     "privateEndpoint": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-queue"
+     },
+     "ipConfigurations": [
+      {
+       "name": "privateEndpointIpConfig",
+       "properties": {
+        "subnet": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-table.nic.e0d1438d-4c87-51b0-95f6-1edfb4bb6130",
+   "name": "pe-hack2026-r8l54-func-table.nic.e0d1438d-4c87-51b0-95f6-1edfb4bb6130",
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:38:10.337481+00:00",
+    "createdTime": "2026-11-20T11:28:09.791815+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-table",
+    "plan": null,
+    "properties": {
+     "privateEndpoint": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-table"
+     },
+     "ipConfigurations": [
+      {
+       "name": "privateEndpointIpConfig",
+       "properties": {
+        "subnet": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-app-blob.nic.fc1975ef-21e8-5b43-84c9-b7898056122c",
+   "name": "pe-hack2026-r8l54-app-blob.nic.fc1975ef-21e8-5b43-84c9-b7898056122c",
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:38:10.113108+00:00",
+    "createdTime": "2026-11-20T11:28:09.858108+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-blob",
+    "plan": null,
+    "properties": {
+     "privateEndpoint": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-blob"
+     },
+     "ipConfigurations": [
+      {
+       "name": "privateEndpointIpConfig",
+       "properties": {
+        "subnet": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-func-blob.nic.38514c07-f023-5f9e-9907-a5a676263b8d",
+   "name": "pe-hack2026-r8l54-func-blob.nic.38514c07-f023-5f9e-9907-a5a676263b8d",
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:38:11.212565+00:00",
+    "createdTime": "2026-11-20T11:28:10.879339+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-blob",
+    "plan": null,
+    "properties": {
+     "privateEndpoint": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-func-blob"
+     },
+     "ipConfigurations": [
+      {
+       "name": "privateEndpointIpConfig",
+       "properties": {
+        "subnet": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkInterfaces/pe-hack2026-r8l54-app-queue.nic.de4670fe-b66c-5eab-babe-7d0af812bce3",
+   "name": "pe-hack2026-r8l54-app-queue.nic.de4670fe-b66c-5eab-babe-7d0af812bce3",
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:38:16.713887+00:00",
+    "createdTime": "2026-11-20T11:28:16.516123+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-queue",
+    "plan": null,
+    "properties": {
+     "privateEndpoint": {
+      "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/privateEndpoints/pe-hack2026-r8l54-app-queue"
+     },
+     "ipConfigurations": [
+      {
+       "name": "privateEndpointIpConfig",
+       "properties": {
+        "subnet": {
+         "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-pe"
+        }
+       }
+      }
+     ]
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Web/sites/func-hack2026-r8l54-worker",
+   "name": "func-hack2026-r8l54-worker",
+   "type": "Microsoft.Web/sites",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T15:02:20.647217+00:00",
+    "createdTime": "2026-11-20T11:29:00.156359+00:00",
+    "extendedLocation": null,
+    "identity": {
+     "type": "UserAssigned",
+     "userAssignedIdentities": {
+      "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hack2026-r8l54-worker": {
+       "clientId": "4a486640-874d-59a2-9270-fc15d5de6ac2"
+      }
+     }
+    },
+    "kind": "functionapp,linux",
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "serverFarmId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Web/serverFarms/asp-hack2026-r8l54-func",
+     "virtualNetworkSubnetId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/virtualNetworks/vnet-hack/subnets/snet-hack2026-r8l54-func",
+     "httpsOnly": true,
+     "defaultHostName": "func-hack2026-r8l54-worker.azurewebsites.net",
+     "siteConfig": {
+      "linuxFxVersion": "",
+      "vnetRouteAllEnabled": true,
+      "appSettings": [
+       {
+        "name": "AZURE_CLIENT_ID",
+        "value": "4a486640-874d-59a2-9270-fc15d5de6ac2"
+       },
+       {
+        "name": "AzureWebJobsStorage__accountName",
+        "value": "sthack2026r8l54func"
+       },
+       {
+        "name": "AzureWebJobsStorage__credential",
+        "value": "managedidentity"
+       },
+       {
+        "name": "ProductsQueue__queueServiceUri",
+        "value": "https://sthack2026r8l54app.queue.core.windows.net"
+       },
+       {
+        "name": "PRODUCTS_QUEUE",
+        "value": "products"
+       },
+       {
+        "name": "STORAGE_BLOB_ENDPOINT",
+        "value": "https://sthack2026r8l54app.blob.core.windows.net/"
+       },
+       {
+        "name": "IMAGES_CONTAINER",
+        "value": "product-images"
+       },
+       {
+        "name": "CosmosDBConnection__accountEndpoint",
+        "value": "https://cosmos-hack2026-r8l54.documents.azure.com:443/"
+       },
+       {
+        "name": "COSMOS_ENDPOINT",
+        "value": "https://cosmos-hack2026-r8l54.documents.azure.com:443/"
+       },
+       {
+        "name": "COSMOS_DATABASE",
+        "value": "shop"
+       },
+       {
+        "name": "COSMOS_CONTAINER",
+        "value": "products"
+       },
+       {
+        "name": "MAX_SCHEDULED_RETRIES",
+        "value": "3"
+       },
+       {
+        "name": "RETRY_BASE_SECONDS",
+        "value": "10"
+       }
+      ]
+     },
+     "functionAppConfig": {
+      "runtime": {
+       "name": "python",
+       "version": "3.11"
+      },
+      "scaleAndConcurrency": {
+       "maximumInstanceCount": 40,
+       "instanceMemoryMB": 2048
+      },
+      "deployment": {
+       "storage": {
+        "type": "blobContainer",
+        "value": "https://sthack2026r8l54func.blob.core.windows.net/deployments"
+       }
+      }
+     }
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "worker",
+     "environment": "hackathon",
+     "hidden-link: /app-insights-resource-id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/microsoft.insights/components/appi-hack2026-r8l54",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Network/networkSecurityGroups/nsg-hack2026-r8l54-apps",
+   "name": "nsg-hack2026-r8l54-apps",
+   "type": "Microsoft.Network/networkSecurityGroups",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T11:49:22.169152+00:00",
+    "createdTime": "2026-11-20T11:49:20.186702+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "securityRules": []
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "network",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.App/containerApps/ca-hack2026-r8l54-api",
+   "name": "ca-hack2026-r8l54-api",
+   "type": "Microsoft.App/containerApps",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T12:35:39.551935+00:00",
+    "createdTime": "2026-11-20T12:25:21.324851+00:00",
+    "extendedLocation": null,
+    "identity": {
+     "type": "UserAssigned",
+     "userAssignedIdentities": {
+      "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-hack2026-r8l54-api": {
+       "clientId": "3767cb49-71b6-50bc-91b4-2f600a2dd011"
+      }
+     }
+    },
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "managedEnvironmentId": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.App/managedEnvironments/cae-hack2026-r8l54",
+     "workloadProfileName": "Consumption",
+     "configuration": {
+      "ingress": {
+       "external": true,
+       "targetPort": 8000,
+       "transport": "auto"
+      }
+     },
+     "template": {
+      "containers": [
+       {
+        "name": "api",
+        "image": "products-api:latest",
+        "resources": {
+         "cpu": 0.5,
+         "memory": "1Gi"
+        },
+        "env": [
+         {
+          "name": "AZURE_CLIENT_ID",
+          "value": "3767cb49-71b6-50bc-91b4-2f600a2dd011"
+         },
+         {
+          "name": "STORAGE_QUEUE_ENDPOINT",
+          "value": "https://sthack2026r8l54app.queue.core.windows.net/"
+         },
+         {
+          "name": "PRODUCTS_QUEUE",
+          "value": "products"
+         },
+         {
+          "name": "STORAGE_BLOB_ENDPOINT",
+          "value": "https://sthack2026r8l54app.blob.core.windows.net/"
+         },
+         {
+          "name": "IMAGES_CONTAINER",
+          "value": "product-images"
+         },
+         {
+          "name": "KEYVAULT_URI",
+          "value": "https://kv-hack2026-r8l54.vault.azure.net/"
+         },
+         {
+          "name": "API_KEY_SECRET_NAME",
+          "value": "products-api-key"
+         },
+         {
+          "name": "COSMOS_ENDPOINT",
+          "value": "https://cosmos-hack2026-r8l54.documents.azure.com:443/"
+         },
+         {
+          "name": "COSMOS_DATABASE",
+          "value": "shop"
+         },
+         {
+          "name": "COSMOS_CONTAINER",
+          "value": "products"
+         },
+         {
+          "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+          "value": "InstrumentationKey=<redacted>;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/"
+         }
+        ]
+       }
+      ],
+      "scale": {
+       "minReplicas": 1,
+       "maxReplicas": 3
+      }
+     }
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": {
+     "component": "api",
+     "environment": "hackathon",
+     "managed-by": "terraform",
+     "workload": "products-demo"
+    }
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.EventGrid/systemTopics/sthack2026r8l54app-ccdad878-70f1-537a-bdde-90076ac6aa84",
+   "name": "sthack2026r8l54app-ccdad878-70f1-537a-bdde-90076ac6aa84",
+   "type": "Microsoft.EventGrid/systemTopics",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T16:17:52.686493+00:00",
+    "createdTime": "2026-11-20T16:07:52.387519+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "source": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54app",
+     "topicType": "Microsoft.Storage.StorageAccounts"
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": null
+   }
+  },
+  {
+   "id": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.EventGrid/systemTopics/sthack2026r8l54func-11699c6f-78ce-5d28-abb3-7bd0ddff97fd",
+   "name": "sthack2026r8l54func-11699c6f-78ce-5d28-abb3-7bd0ddff97fd",
+   "type": "Microsoft.EventGrid/systemTopics",
+   "location": "westeurope",
+   "properties": {
+    "changedTime": "2026-11-20T16:17:54.279081+00:00",
+    "createdTime": "2026-11-20T16:07:53.827298+00:00",
+    "extendedLocation": null,
+    "identity": null,
+    "kind": null,
+    "managedBy": null,
+    "plan": null,
+    "properties": {
+     "source": "/subscriptions/00000000-0000-4000-8000-000000000000/resourceGroups/hackaton-2026-rg/providers/Microsoft.Storage/storageAccounts/sthack2026r8l54func",
+     "topicType": "Microsoft.Storage.StorageAccounts"
+    },
+    "provisioningState": "Succeeded",
+    "resourceGroup": "hackaton-2026-rg",
+    "sku": null,
+    "tags": null
+   }
+  }
+ ]
+}
