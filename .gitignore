@@ -6,3 +6,14 @@
 .venv/
 __pycache__/
 data/
+# local settings
+.claude/settings.local.json
+.env
+# build artifacts
+*.egg-info/
+dist/
+# logs
+*.log
+# OS
+.DS_Store
+Thumbs.db
