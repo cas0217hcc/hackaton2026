@@ -47,7 +47,7 @@ def check_change(change: CodeChange, folders: dict[str, Path], runner: Callable 
         return "conflicts", f"The file named in the diff ({old or 'none'}) is not in {folder}."
     with tempfile.TemporaryDirectory(prefix="migration-assistant-") as tmp:
         patch = Path(tmp) / "change.patch"
-        patch.write_text(text)
+        patch.write_bytes(text.encode("utf-8"))  # LF as given: a CRLF patch (write_text on Windows) never applies to LF files
         first_error = ""
         for strip in levels:
             try:
