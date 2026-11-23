@@ -126,7 +126,9 @@ def test_only_azure_mocked_keeps_the_real_ai_and_no_key():
     assert c.get("/api/resource-groups").json()["groups"][0]["name"] == RG
     assert "mock" not in {p["id"] for p in c.get("/api/ai").json()["providers"]}
     state = c.get("/api/state").json()
-    assert state["notice"].startswith("Mock mode: Azure") and state["api_key_set"] is False and not state["fake_leaseweb"]
+    assert state["notice"].startswith("Mock mode: Azure") and state["api_key_set"] is False
+    assert state["fake"] == {"azure": True, "ai": False, "leaseweb": False}
+    assert 'data-fake-azure="1"' in c.get("/").text and "data-fake-ai" not in c.get("/").text
 
 
 # ---- AI
@@ -199,7 +201,7 @@ def test_mock_code_changes_apply_to_the_code_they_were_made_for(client, tmp_path
 def test_mock_leaseweb_starts_with_a_working_mock_key():
     c = make("leaseweb", ask=lambda p: {})
     state = c.get("/api/state").json()
-    assert state["api_key_set"] is True and state["key_verified"] is True and state["fake_leaseweb"] is True
+    assert state["api_key_set"] is True and state["key_verified"] is True and state["fake"]["leaseweb"] is True
     assert c.post("/api/key/test").json()["key_verified"] is True
     assert c.get("/api/migrate/options").json()["source"] == "live"
     assert 'data-fake-leaseweb="1"' in c.get("/").text
@@ -244,14 +246,15 @@ def test_every_export_says_it_was_made_in_mock_mode(client):
         assert name in r.headers["content-disposition"] and r.headers["x-mock-notice"] == notice
     assert client.get("/export/calls.sh").text.splitlines()[:2] == ["#!/usr/bin/env bash", f"# {notice}"]
     assert client.get("/export/patch").text.startswith(f"# {notice}\n")
-    assert "mock" in client.get("/").text and notice in client.get("/").text
+    page = client.get("/").text  # the page shows it on the badges (violet), not in a banner
+    assert all(f'data-fake-{p}="1"' in page for p in PARTS) and "mock-banner" not in page
 
 
 def test_the_real_app_mocks_nothing_and_labels_nothing():
     real = TestClient(create_app(ask=lambda p: {}, state_file=None))
     state = real.get("/api/state").json()
-    assert state["notice"] == "" and state["fake_leaseweb"] is False and state["api_key_set"] is False
-    assert "mock-banner" not in real.get("/").text
+    assert state["notice"] == "" and state["fake"] == {"azure": False, "ai": False, "leaseweb": False}
+    assert state["api_key_set"] is False and "data-fake-" not in real.get("/").text
     r = real.get("/export/calls.json")
     assert "mock-" not in r.headers["content-disposition"] and "x-mock-notice" not in r.headers
     assert [p for p in real.get("/api/ai").json()["providers"] if p == MOCK_PROVIDER] == []

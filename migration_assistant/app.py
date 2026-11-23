@@ -120,7 +120,10 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     ai_providers: the only AI providers to offer, instead of the installed ones; the first is selected.
     api_key: a Leaseweb key to start with. Only accepted with a fake HTTP client (`http.fake`), so a made-up
     key can never be sent to the real Leaseweb API. mock/__init__.py fills all of these for mock mode."""
-    fake_leaseweb = bool(getattr(http, "fake", False))
+    # A stand-in (mock.py) says so with `fake = True` on the object behind the function; the badges show it.
+    is_fake = lambda fn: bool(getattr(fn, "fake", False) or getattr(getattr(fn, "__self__", None), "fake", False))
+    fake = {"azure": is_fake(discover), "ai": is_fake(ask), "leaseweb": is_fake(http)}
+    fake_leaseweb = fake["leaseweb"]
     if api_key and not fake_leaseweb:
         raise ValueError("api_key is only accepted together with a fake Leaseweb client")
     app = FastAPI(title="Azure to Leaseweb Migration Assistant")
@@ -203,12 +206,11 @@ def create_app(discover: Callable = list_resources, ask: Callable | None = None,
     def index(request: Request):
         # Version static URLs by file mtime so browsers never reuse stale JS/CSS.
         v = int(max(f.stat().st_mtime for f in (HERE / "static").iterdir()))
-        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v, "notice": notice,
-                                                                   "fake_leaseweb": fake_leaseweb})
+        return templates.TemplateResponse(request, "index.html", {"default_rg": DEFAULT_RG, "v": v, "fake": fake})
 
     @app.get("/api/state")
     def api_state():
-        return {**_dump(state), "notice": notice, "fake_leaseweb": fake_leaseweb, "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
+        return {**_dump(state), "notice": notice, "fake": fake, "api_key_set": bool(secrets["api_key"]), "key_verified": key_check["verified"],
                 "chain": dict(chain), "created": list(created)}
 
     @app.post("/api/key")

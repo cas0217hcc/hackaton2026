@@ -598,11 +598,12 @@ let migrateRows = [];
 let chainIds = {};  // ids returned by earlier live calls, e.g. instanceId
 
 function refreshMode() {
-  const fake = document.body.dataset.fakeLeaseweb === "1";  // mock mode: "live" calls go to a fake Leaseweb API
-  $("mode-text").textContent = live ? (fake ? "MOCK LIVE: calls go to a fake Leaseweb API" : "LIVE: calls are sent to Leaseweb")
-    : "Dry run: nothing is sent to Leaseweb";
-  $("mode").classList.toggle("live", live);
-  $("liveband").hidden = !live;
+  const fake = isFake("leaseweb");  // "live" calls go to a fake Leaseweb API: nothing real happens
+  $("mode-text").textContent = !live ? "Dry run: nothing is sent to Leaseweb"
+    : fake ? "Mock: calls go to a fake Leaseweb API" : "LIVE: calls are sent to Leaseweb";
+  $("mode").classList.toggle("live", live && !fake);
+  $("mode").classList.toggle("mock", live && fake);
+  $("liveband").hidden = !live || fake;  // the billing warning only when calls really reach Leaseweb
   renderKeyConn();
   $("migrate-btn").textContent = live ? "Run LIVE migration" : "Run dry-run migration";
   $("migrate-btn").classList.toggle("danger", live);
@@ -1110,9 +1111,11 @@ function renderAi(s) {
   const sel = $("ai-provider");
   sel.replaceChildren(...s.providers.map((p) => el("option", { value: p.id }, `${p.label} (${p.detail})`)));
   sel.value = s.provider;
-  $("ai-btn-text").replaceChildren("AI: " + aiLabel(s), el("span", { class: "ai-model" }, aiModelText(s)));
-  $("ai-btn").title = s.problem ? s.problem : "Change the AI provider and model";
-  setDot("ai-dot", s.problem ? "bad" : aiTested ? "ok" : "ready");
+  const mock = isFake("ai");
+  $("ai-btn-text").replaceChildren(mock ? "AI: mock" : s.problem ? "AI: not ready" : "AI: " + aiLabel(s),
+    el("span", { class: "ai-model" }, mock ? "canned answers" : aiModelText(s)));
+  $("ai-btn").title = mock ? "Mock AI: canned answers, no tokens are spent." : s.problem ? s.problem : "Change the AI provider and model";
+  setConn("ai", mock ? "mock" : s.problem ? "unset" : "real", aiTested);
   renderChecks();
   refreshGates();
   syncAiForm(s.provider);
@@ -1218,9 +1221,13 @@ function setKeyResult(text, ok) {
 
 // The Leaseweb chip and panel: no key (dry run), a key Leaseweb accepted, or a key not confirmed yet.
 function renderKeyConn() {
-  setDot("key-dot", !live ? "idle" : keyVerified ? "ok" : "warn");
-  $("key-btn-text").textContent = !live ? "Leaseweb: no key" : keyVerified ? "Leaseweb: live, key verified" : "Leaseweb: live, key not verified";
+  const mock = live && isFake("leaseweb");
+  setConn("key", !live ? "unset" : mock ? "mock" : "real", !!keyVerified);
+  $("key-btn-text").textContent = !live ? "Leaseweb: no key (dry run)" : mock ? "Leaseweb: mock API"
+    : keyVerified ? "Leaseweb: live, key verified" : "Leaseweb: live, key not verified";
+  $("key-btn").title = mock ? "Mock Leaseweb: a fake API with a mock key. Nothing is sent to Leaseweb." : "";
   $("key-state").textContent = !live ? "No key is set, so every run is a dry run and nothing is sent."
+    : mock ? "Mock mode: a mock key is set and runs go to a fake Leaseweb API that follows the specs. Nothing is sent to Leaseweb."
     : keyVerified ? "A key is set and Leaseweb accepted it. Runs in Automatic migration are LIVE."
     : "A key is set, but Leaseweb has not confirmed it yet. Runs in Automatic migration are LIVE.";
   $("key-test").hidden = !live;
@@ -1289,6 +1296,20 @@ const PANELS = [["azure-btn", "azurebar", "az-check"], ["ai-btn", "aibar", "ai-p
 
 function setDot(id, state) { $(id).className = "dot " + state; }
 
+// Each connection is in one of these states, with one colour everywhere (badge, dot, readiness card):
+//   checking (grey), unset (amber: not set up), real (green: real credentials; a hollow ring until tested),
+//   mock (violet: a stand-in from mock mode, see mock/).
+const isFake = (part) => document.body.dataset["fake" + part.charAt(0).toUpperCase() + part.slice(1)] === "1";
+const CONN_WORD = { checking: "Checking", unset: "Not set", real: "Real", mock: "Mocked" };
+
+function setConn(part, state, verified = true) {
+  const btn = $(part + "-btn");
+  btn.classList.remove("checking", "unset", "real", "mock");
+  btn.classList.add(state);
+  btn.dataset.state = CONN_WORD[state];
+  setDot(part + "-dot", state === "real" && !verified ? "real ready" : state);
+}
+
 function closePanel(btnId, barId) {
   $(barId).hidden = true;
   $(btnId).setAttribute("aria-expanded", "false");
@@ -1341,9 +1362,11 @@ function renderAzure() {
   const s = azureState;
   const ok = !!(s && s.signed_in);
   const sub = selectedSub();
-  setDot("azure-dot", !s ? "idle" : ok ? "ok" : "bad");
-  $("azure-btn-text").textContent = !s ? "Azure: checking..." : ok ? `Azure: ${sub ? sub.name : "signed in"}` : !s.installed ? "Azure: CLI missing" : "Azure: not signed in";
-  $("azure-btn").title = ok ? `Signed in as ${s.user}` : s ? s.message : "";
+  const mock = isFake("azure");
+  setConn("azure", !s ? "checking" : mock ? "mock" : ok ? "real" : "unset");
+  $("azure-btn-text").textContent = !s ? "Azure: checking..." : mock ? "Azure: mock data" : ok ? `Azure: ${sub ? sub.name : "signed in"}`
+    : !s.installed ? "Azure: CLI missing" : "Azure: not signed in";
+  $("azure-btn").title = mock ? "Mock Azure: a saved copy of hackaton-2026-rg; az is not used." : ok ? `Signed in as ${s.user}` : s ? s.message : "";
   $("az-status").replaceChildren(...(!s ? ["Checking..."] : ok
     ? ["Signed in as ", el("b", {}, s.user || "unknown user"), ". Default subscription: ", el("b", {}, s.subscription.name), "."]
     : withCode(s.message)));
@@ -1392,8 +1415,11 @@ async function saveSubscription() {
 function checkItem(state, title, need, detail, label, barId) {
   const btn = el("button", { type: "button", class: "btn secondary" }, label);
   btn.addEventListener("click", () => openPanel(barId));
-  const word = { ok: "Ready", bad: "Action needed", warn: "Check", idle: state === "idle" && title === "Leaseweb" ? "Optional" : "Checking", ready: "Ready" }[state];
-  return el("div", { class: "check " + state },
+  // state: checking | unset | real | mock, and "real ready" for real but not tested yet
+  const base = state.split(" ")[0];
+  const word = base === "unset" && title === "Leaseweb" ? "Optional" : base === "unset" ? "Action needed"
+    : state === "real ready" ? "Set, not tested" : CONN_WORD[base];
+  return el("div", { class: "check " + base },
     el("div", { class: "check-head" }, el("i", { class: "dot " + state, "aria-hidden": "true" }), el("span", { class: "check-title" }, title),
       el("span", { class: "check-state" }, word)),
     el("p", { class: "check-need" }, need),
@@ -1406,14 +1432,19 @@ function renderChecks() {
   if (!box) return;
   const az = azureState, ai = aiState;
   const sub = selectedSub();
-  const azure = checkItem(!az ? "idle" : az.signed_in ? "ok" : "bad", "Azure", "Required to discover resources",
-    !az ? "Checking the Azure CLI sign-in..." : az.signed_in ? `Signed in as ${az.user}. Subscription: ${sub ? sub.name : "default"}.` : az.message,
-    az && az.signed_in ? "Change subscription" : "Fix Azure sign-in", "azurebar");
-  const aiItem = checkItem(!ai ? "idle" : ai.problem ? "bad" : aiTested ? "ok" : "ready", "AI provider", "Required to assess unknown types and write plans",
-    !ai ? "Checking..." : ai.problem ? ai.problem : `${aiLabel(ai)}, ${aiModelText(ai)}.${aiTested ? " Connection tested." : " Test the connection before a long run."}`,
-    ai && !ai.problem && !aiTested ? "Test connection" : "AI settings", "aibar");
-  const lsw = checkItem(!live ? "idle" : keyVerified ? "ok" : "warn", "Leaseweb", "Optional: only to send real calls",
+  const mockAz = isFake("azure"), mockAi = isFake("ai"), mockLsw = live && isFake("leaseweb");
+  const azure = checkItem(!az ? "checking" : mockAz ? "mock" : az.signed_in ? "real" : "unset", "Azure", "Required to discover resources",
+    !az ? "Checking the Azure CLI sign-in..." : mockAz ? "Mock data: a saved copy of hackaton-2026-rg. az is not used."
+      : az.signed_in ? `Signed in as ${az.user}. Subscription: ${sub ? sub.name : "default"}.` : az.message,
+    az && az.signed_in && !mockAz ? "Change subscription" : mockAz ? "Azure settings" : "Fix Azure sign-in", "azurebar");
+  const aiItem = checkItem(!ai ? "checking" : mockAi ? "mock" : ai.problem ? "unset" : aiTested ? "real" : "real ready",
+    "AI provider", "Required to assess unknown types and write plans",
+    !ai ? "Checking..." : mockAi ? "Mock AI: canned answers, no tokens are spent." : ai.problem ? ai.problem
+      : `${aiLabel(ai)}, ${aiModelText(ai)}.${aiTested ? " Connection tested." : " Test the connection before a long run."}`,
+    ai && !ai.problem && !aiTested && !mockAi ? "Test connection" : "AI settings", "aibar");
+  const lsw = checkItem(!live ? "unset" : mockLsw ? "mock" : keyVerified ? "real" : "real ready", "Leaseweb", "Optional: only to send real calls",
     !live ? "No key: Automatic migration runs as a dry run and sends nothing. Add a key when you are ready to create real resources."
+      : mockLsw ? "Mock Leaseweb: runs go to a fake API that follows the specs. Nothing is sent to Leaseweb."
       : keyVerified ? "Key verified. Automatic migration sends real calls." : "A key is set but not verified yet.",
     live ? "Leaseweb settings" : "Add a key", "keybar");
   box.replaceChildren(azure, aiItem, lsw);

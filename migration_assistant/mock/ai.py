@@ -111,6 +111,8 @@ assert set(ANSWERS) == set(TASKS), "every AI task needs a mock answer"
 
 
 class MockAI:
+    fake = True  # create_app shows the AI badge as mocked
+
     def __init__(self, delay: float = 0.0):
         self.delay = delay
 
